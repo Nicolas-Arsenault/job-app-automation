@@ -12,6 +12,10 @@ import {
   createGoldenJobMatcher,
   historicalGoldenJobMatch,
 } from "@/lib/jobs/golden";
+import {
+  compareRecruitingTerms,
+  extractJobRecruitingTerms,
+} from "@/lib/jobs/term";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +50,7 @@ export async function GET(req: NextRequest) {
         salaryMax: true,
         salaryMin: true,
         applicationStatus: true,
+        sightings: { select: { source: { select: { name: true } } } },
       },
       take: 8000,
     }),
@@ -60,6 +65,7 @@ export async function GET(req: NextRequest) {
     : jobs;
 
   const skillCounts = new Map<string, number>();
+  const terms = new Map<string, number>();
   const sources = new Map<string, number>();
   const platforms = new Map<string, number>();
   const categories = new Map<string, number>();
@@ -76,6 +82,15 @@ export async function GET(req: NextRequest) {
   };
 
   for (const j of visibleJobs) {
+    const jobTerms = extractJobRecruitingTerms({
+      title: j.title,
+      description: j.description,
+      sourceNames: j.sightings.map((sighting) => sighting.source.name),
+    });
+    if (jobTerms.length === 0) bump(terms, "unknown");
+    for (const term of jobTerms) {
+      bump(terms, term);
+    }
     bump(sources, j.discoverySystem);
     bump(platforms, j.atsType || "unknown");
     bump(categories, categorizeCompany(j.company, fallbackForSystem(j.discoverySystem)));
@@ -105,6 +120,9 @@ export async function GET(req: NextRequest) {
       .map(([value, count]) => ({ value, count }));
 
   return json({
+    terms: [...terms.entries()]
+      .sort(([a], [b]) => compareRecruitingTerms(a, b))
+      .map(([value, count]) => ({ value, count })),
     skills: sorted(skillCounts, 60),
     sources: sorted(sources),
     categories: CATEGORY_ORDER.filter((c) => categories.has(c)).map((c) => ({
