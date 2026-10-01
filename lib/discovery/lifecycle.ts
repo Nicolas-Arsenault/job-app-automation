@@ -260,7 +260,11 @@ export function describeApiSource(company: ApiCompany): DiscoverySourceDescripto
     ? `${company.board.owner}/${company.board.repo}/${company.board.ref}/${company.board.path}`
     : company.workday
       ? `${company.workday.host}/${company.workday.tenant}/${company.workday.site}`
-      : company.yc?.directoryUrl ?? company.token ?? company.name;
+      : company.eightfold
+        ? `${company.eightfold.host}/${company.eightfold.domain}`
+        : company.oracle
+          ? `${company.oracle.host}/${company.oracle.site}`
+          : company.yc?.directoryUrl ?? company.token ?? company.name;
   const authoritative = AUTHORITATIVE_SYSTEMS.has(company.system);
   const aggregator = company.system === "githubboard";
   return {

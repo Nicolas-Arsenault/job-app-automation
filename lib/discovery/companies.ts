@@ -45,6 +45,8 @@ export type DiscoverySystem =
   | "githubboard"
   | "ycombinator"
   | "watchlist"
+  | "eightfold"
+  | "oracle"
   | "workday";
 
 export type BrowserSystem =
@@ -80,6 +82,10 @@ export interface ApiCompany {
     /** Fetch each relevant job detail so experience requirements are available. */
     fetchDescriptions?: boolean;
   };
+  // Eightfold career portal public search API.
+  eightfold?: { host: string; domain: string };
+  // Oracle Recruiting Candidate Experience public REST API.
+  oracle?: { host: string; careerHost: string; site: string };
   // TalentBrew (Radancy) host, e.g. "jobs.intuit.com".
   talentbrew?: { host: string };
   // GitHub-hosted aggregator board. JSON boards use the shared listings schema;
@@ -121,7 +127,7 @@ const SWE = ["software engineer", "software developer"];
 const SWE_BROAD = ["software engineer", "software developer", "machine learning", "devops"];
 
 // ---------------------------------------------------------------------------
-// API companies (96) — direct public JSON endpoints, verified live. Includes
+// API companies — direct public JSON endpoints, verified live. Includes
 // Canada-first and quant / trading blocks near the end.
 // ---------------------------------------------------------------------------
 
@@ -180,6 +186,14 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Rivian", method: "api", system: "phenom", token: "careers.rivian.com", countryFilter: "post", queryTerms: SWE },
   { name: "Spotify", method: "api", system: "spotify", countryFilter: "post", queryTerms: SWE },
   { name: "Intuit", method: "api", system: "talentbrew", countryFilter: "post", queryTerms: SWE, talentbrew: { host: "jobs.intuit.com" } },
+  { name: "Kinaxis", method: "api", system: "phenom", token: "join.kinaxis.com", countryFilter: "post", queryTerms: ["intern"] },
+
+  // ---- Eightfold public career search API
+  { name: "Autodesk", method: "api", system: "eightfold", countryFilter: "post", queryTerms: ["intern"], eightfold: { host: "jobs.autodesk.com", domain: "autodesk.com" } },
+  { name: "Ericsson", method: "api", system: "eightfold", countryFilter: "post", queryTerms: ["intern"], eightfold: { host: "jobs.ericsson.com", domain: "ericsson.com" } },
+
+  // ---- Oracle Recruiting Candidate Experience API
+  { name: "Nokia", method: "api", system: "oracle", countryFilter: "post", queryTerms: ["intern"], oracle: { host: "fa-evmr-saasfaprod1.fa.ocs.oraclecloud.com", careerHost: "jobs.nokia.com", site: "CX_1" } },
 
   // ---- SmartRecruiters public Posting API
   { name: "Ubisoft", method: "api", system: "smartrecruiters", token: "Ubisoft2", countryFilter: "native", queryTerms: SWE_BROAD },
@@ -205,12 +219,16 @@ export const API_COMPANIES: ApiCompany[] = [
       fetchDescriptions: true,
     },
   },
+  { name: "Ciena", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "ciena.wd5.myworkdayjobs.com", tenant: "ciena", site: "Careers", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
+  { name: "Clio", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "clio.wd3.myworkdayjobs.com", tenant: "clio", site: "ClioCareerSite", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
+  { name: "BlackBerry", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "bb.wd3.myworkdayjobs.com", tenant: "bb", site: "BlackBerry", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true } },
 
   // ---- Canada-first technology companies. The Quebec cohort covers Montreal,
   // Quebec City, Sherbrooke, and other provincial offices exposed by each board.
   { name: "Behaviour Interactive", method: "api", system: "lever", token: "bhvr", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "TrackTik", method: "api", system: "lever", token: "tracktik", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "AlayaCare", method: "api", system: "greenhouse", token: "alayacare", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Coveo", method: "api", system: "greenhouse", token: "coveoen", countryFilter: "post", queryTerms: ["intern"] },
   { name: "Ada", method: "api", system: "greenhouse", token: "ada18", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "League", method: "api", system: "greenhouse", token: "leagueinc", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Hootsuite", method: "api", system: "greenhouse", token: "hootsuite", countryFilter: "post", queryTerms: SWE_BROAD },

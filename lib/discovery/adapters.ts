@@ -881,6 +881,211 @@ async function phenom(c: ApiCompany): Promise<DiscoveryPosting[]> {
   return out;
 }
 
+// -------------------------------- Eightfold ---------------------------------
+
+async function eightfold(
+  c: ApiCompany,
+  ctx: FetchContext = {},
+): Promise<DiscoveryPosting[]> {
+  const config = c.eightfold!;
+  type EightfoldRow = {
+    id?: string | number;
+    displayJobId?: string;
+    name?: string;
+    locations?: string[];
+    standardizedLocations?: string[];
+    postedTs?: number;
+    positionUrl?: string;
+  };
+  const rows = new Map<string, EightfoldRow>();
+
+  for (const term of c.queryTerms) {
+    for (let start = 0; start < 500; start += 10) {
+      const url =
+        `https://${config.host}/api/pcsx/search?domain=${encodeURIComponent(config.domain)}` +
+        `&query=${encodeURIComponent(term)}&location=&start=${start}&sort_by=timestamp`;
+      const response = (await fetchJson(url)) as {
+        data?: { count?: number; positions?: EightfoldRow[] };
+      };
+      if (!response.data || !Array.isArray(response.data.positions)) {
+        throw new Error(`${c.name} Eightfold response is missing data.positions`);
+      }
+      const positions = requireValidPostingRows(
+        `${c.name} Eightfold`,
+        response.data.positions,
+        (row) => row.id != null && isNonEmptyString(row.name) && isNonEmptyString(row.positionUrl),
+      );
+      for (const row of positions) rows.set(String(row.id), row);
+      if (positions.length === 0 || start + positions.length >= (response.data.count ?? 0)) break;
+    }
+  }
+
+  return mapPool([...rows.values()], 2, async (row) => {
+    const id = String(row.id);
+    const location = (row.standardizedLocations ?? row.locations ?? []).join(" | ");
+    const fallback = () =>
+      mk("eightfold", c.name, {
+        title: row.name ?? "",
+        location,
+        applyUrl: `https://${config.host}${row.positionUrl}`,
+        externalId: row.displayJobId ?? id,
+        description: "",
+        postedAt: toDate(row.postedTs),
+      });
+
+    if (!isSoftwareRole(row.name ?? "") || !["US", "CA"].includes(classifyCountry(location))) {
+      return fallback();
+    }
+    try {
+      const detail = (await fetchJson(
+        `https://${config.host}/api/pcsx/position_details?position_id=${encodeURIComponent(id)}` +
+          `&domain=${encodeURIComponent(config.domain)}`,
+      )) as {
+        data?: EightfoldRow & { jobDescription?: string };
+      };
+      if (!detail.data) throw new Error("response is missing data");
+      return mk("eightfold", c.name, {
+        title: detail.data.name ?? row.name ?? "",
+        location: (detail.data.standardizedLocations ?? detail.data.locations ?? []).join(" | ") || location,
+        applyUrl: `https://${config.host}${detail.data.positionUrl ?? row.positionUrl}`,
+        externalId: detail.data.displayJobId ?? row.displayJobId ?? id,
+        description: stripHtml(detail.data.jobDescription),
+        postedAt: toDate(detail.data.postedTs ?? row.postedTs),
+      });
+    } catch (error) {
+      const warning =
+        `${c.name} Eightfold detail unavailable for ${id}; using list data (` +
+        `${error instanceof Error ? error.message : String(error)})`;
+      console.warn(`[discovery] ${warning}`);
+      ctx.onWarning?.(warning);
+      return fallback();
+    }
+  });
+}
+
+// ---------------------- Oracle Recruiting Candidate Experience ----------------------
+
+async function oracle(
+  c: ApiCompany,
+  ctx: FetchContext = {},
+): Promise<DiscoveryPosting[]> {
+  const config = c.oracle!;
+  type OracleLocation = {
+    Name?: string;
+    LocationName?: string;
+    TownOrCity?: string;
+    Region2?: string;
+    Country?: string;
+  };
+  type OracleRow = {
+    Id?: string;
+    RequisitionId?: string | number;
+    Title?: string;
+    PostedDate?: string;
+    PrimaryLocation?: string;
+    PrimaryLocationCountry?: string;
+    ShortDescriptionStr?: string;
+    secondaryLocations?: OracleLocation[];
+    workLocation?: OracleLocation[];
+    otherWorkLocations?: OracleLocation[];
+  };
+  const rows = new Map<string, OracleRow>();
+
+  for (const term of c.queryTerms) {
+    for (let offset = 0; offset < 500; offset += 100) {
+      const finder =
+        `siteNumber=${config.site},limit=100,offset=${offset},` +
+        `sortBy=POSTING_DATES_DESC,keyword=${encodeURIComponent(term)}`;
+      const url =
+        `https://${config.host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions` +
+        `?onlyData=true&expand=requisitionList.workLocation,requisitionList.otherWorkLocations,` +
+        `requisitionList.secondaryLocations&finder=findReqs;${finder}`;
+      const response = (await fetchJson(url)) as {
+        items?: { TotalJobsCount?: number; requisitionList?: OracleRow[] }[];
+      };
+      const page = response.items?.[0];
+      if (!page || !Array.isArray(page.requisitionList)) {
+        throw new Error(`${c.name} Oracle response is missing items[0].requisitionList`);
+      }
+      const jobs = requireValidPostingRows(
+        `${c.name} Oracle`,
+        page.requisitionList,
+        (row) => isNonEmptyString(row.Id) && isNonEmptyString(row.Title),
+      );
+      for (const row of jobs) rows.set(row.Id!, row);
+      if (jobs.length === 0 || offset + jobs.length >= (page.TotalJobsCount ?? 0)) break;
+    }
+  }
+
+  const formatLocation = (row: OracleRow) => {
+    const locations = [
+      ...(row.workLocation ?? []),
+      ...(row.otherWorkLocations ?? []),
+      ...(row.secondaryLocations ?? []),
+    ].map((location) =>
+      [location.TownOrCity, location.Region2, location.Country]
+        .filter(Boolean)
+        .join(", ") || location.LocationName || location.Name || "",
+    );
+    return [...new Set(locations.filter(Boolean))].join(" | ") ||
+      row.PrimaryLocation || row.PrimaryLocationCountry || "";
+  };
+
+  return mapPool([...rows.values()], 2, async (row) => {
+    const id = row.Id!;
+    const location = formatLocation(row);
+    const fallback = () =>
+      mk("oracle", c.name, {
+        title: row.Title ?? "",
+        location,
+        applyUrl: `https://${config.careerHost}/en/sites/${config.site}/job/${id}/`,
+        externalId: String(row.RequisitionId ?? id),
+        description: stripHtml(row.ShortDescriptionStr),
+        postedAt: toDate(row.PostedDate),
+      });
+
+    if (!isSoftwareRole(row.Title ?? "") || !["US", "CA"].includes(classifyCountry(location))) {
+      return fallback();
+    }
+    try {
+      const finder = `Id=${encodeURIComponent(`"${id}"`)},siteNumber=${config.site}`;
+      const detail = (await fetchJson(
+        `https://${config.host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails` +
+          `?expand=all&onlyData=true&finder=ById;${finder}`,
+      )) as {
+        items?: (OracleRow & {
+          ExternalPostedStartDate?: string;
+          ExternalDescriptionStr?: string;
+          ExternalResponsibilitiesStr?: string;
+          ExternalQualificationsStr?: string;
+        })[];
+      };
+      const job = detail.items?.[0];
+      if (!job) throw new Error("response is missing items[0]");
+      const description = [
+        job.ExternalDescriptionStr,
+        job.ExternalResponsibilitiesStr,
+        job.ExternalQualificationsStr,
+      ].filter(Boolean).join(" ");
+      return mk("oracle", c.name, {
+        title: job.Title ?? row.Title ?? "",
+        location: formatLocation(job) || location,
+        applyUrl: `https://${config.careerHost}/en/sites/${config.site}/job/${id}/`,
+        externalId: String(job.RequisitionId ?? row.RequisitionId ?? id),
+        description: stripHtml(description || job.ShortDescriptionStr),
+        postedAt: toDate(job.ExternalPostedStartDate ?? row.PostedDate),
+      });
+    } catch (error) {
+      const warning =
+        `${c.name} Oracle detail unavailable for ${id}; using list data (` +
+        `${error instanceof Error ? error.message : String(error)})`;
+      console.warn(`[discovery] ${warning}`);
+      ctx.onWarning?.(warning);
+      return fallback();
+    }
+  });
+}
+
 // ----------------------------------- Workday -----------------------------------
 
 async function workday(
@@ -1440,6 +1645,8 @@ const FETCHERS: Record<
   netflix,
   snap,
   phenom,
+  eightfold,
+  oracle,
   spotify,
   talentbrew,
   microsoft,

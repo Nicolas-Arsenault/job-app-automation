@@ -1034,6 +1034,141 @@ describe("Jibe careers adapter", () => {
   });
 });
 
+describe("Eightfold adapter", () => {
+  it("loads current search results and details for relevant North American roles", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/api/pcsx/search?")) {
+        return jsonResponse({
+          data: {
+            count: 2,
+            positions: [
+              {
+                id: 101,
+                displayJobId: "REQ-101",
+                name: "Software Developer Intern",
+                standardizedLocations: ["Toronto, ON, CA"],
+                postedTs: 1_790_812_800,
+                positionUrl: "/careers/job/101",
+              },
+              {
+                id: 102,
+                displayJobId: "REQ-102",
+                name: "People Operations Intern",
+                standardizedLocations: ["Boston, MA, US"],
+                postedTs: 1_790_812_800,
+                positionUrl: "/careers/job/102",
+              },
+            ],
+          },
+        });
+      }
+      if (url.includes("/api/pcsx/position_details?")) {
+        return jsonResponse({
+          data: {
+            id: 101,
+            displayJobId: "REQ-101",
+            name: "Software Developer Intern",
+            standardizedLocations: ["Toronto, ON, CA"],
+            postedTs: 1_790_812_800,
+            positionUrl: "/careers/job/101",
+            jobDescription: "Build <b>cloud software</b>.",
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings({
+      name: "Acme",
+      method: "api",
+      system: "eightfold",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+      eightfold: { host: "jobs.acme.test", domain: "acme.test" },
+    });
+
+    expect(posts).toHaveLength(2);
+    expect(posts[0]).toMatchObject({
+      system: "eightfold",
+      externalId: "REQ-101",
+      country: "CA",
+      description: "Build cloud software .",
+      applyUrl: "https://jobs.acme.test/careers/job/101",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Oracle Recruiting adapter", () => {
+  it("uses the public Candidate Experience list and detail endpoints", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("recruitingCEJobRequisitions?")) {
+        return jsonResponse({
+          items: [{
+            TotalJobsCount: 2,
+            requisitionList: [
+              {
+                Id: "40117",
+                RequisitionId: 40117,
+                Title: "Software Developer Co-op/Intern",
+                PostedDate: "2026-10-01",
+                PrimaryLocation: "Canada",
+                workLocation: [{ TownOrCity: "Ottawa", Region2: "Ontario", Country: "CA" }],
+                secondaryLocations: [],
+              },
+              {
+                Id: "40118",
+                Title: "Finance Intern",
+                PostedDate: "2026-10-01",
+                PrimaryLocation: "France",
+                secondaryLocations: [],
+              },
+            ],
+          }],
+        });
+      }
+      if (url.includes("recruitingCEJobRequisitionDetails?")) {
+        return jsonResponse({
+          items: [{
+            Id: "40117",
+            RequisitionId: 40117,
+            Title: "Software Developer Co-op/Intern",
+            ExternalPostedStartDate: "2026-10-01T14:00:00Z",
+            PrimaryLocation: "Canada",
+            workLocation: [{ TownOrCity: "Ottawa", Region2: "Ontario", Country: "CA" }],
+            ExternalDescriptionStr: "Build software.",
+            ExternalQualificationsStr: "Currently pursuing a bachelor's degree.",
+          }],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings({
+      name: "Acme",
+      method: "api",
+      system: "oracle",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+      oracle: { host: "oracle.acme.test", careerHost: "jobs.acme.test", site: "CX_1" },
+    });
+
+    expect(posts).toHaveLength(2);
+    expect(posts[0]).toMatchObject({
+      system: "oracle",
+      externalId: "40117",
+      country: "CA",
+      description: "Build software. Currently pursuing a bachelor's degree.",
+      applyUrl: "https://jobs.acme.test/en/sites/CX_1/job/40117/",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("Workday adapter details", () => {
   it("loads official descriptions for relevant configured roles", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -1195,6 +1330,14 @@ describe("discovery catalog", () => {
     expect(bySystem("Genetec")).toBe("workable");
     expect(bySystem("Vention")).toBe("teamtailor");
     expect(bySystem("Hopper")).toBe("ashby");
+    expect(bySystem("Coveo")).toBe("greenhouse");
+    expect(bySystem("Ciena")).toBe("workday");
+    expect(bySystem("Kinaxis")).toBe("phenom");
+    expect(bySystem("Autodesk")).toBe("eightfold");
+    expect(bySystem("Nokia")).toBe("oracle");
+    expect(bySystem("Ericsson")).toBe("eightfold");
+    expect(bySystem("Clio")).toBe("workday");
+    expect(bySystem("BlackBerry")).toBe("workday");
   });
 
   it("registers the quant / trading firms with the expected system", () => {
