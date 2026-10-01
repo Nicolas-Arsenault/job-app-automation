@@ -314,7 +314,7 @@ export const BROWSER_COMPANIES: BrowserCompany[] = [
 export const ALL_COMPANIES: DiscoveryCompany[] = [...API_COMPANIES, ...BROWSER_COMPANIES];
 
 // ---------------------------------------------------------------------------
-// GitHub aggregator boards — community-maintained new-grad job feeds published
+// GitHub aggregator boards — community-maintained internship feeds published
 // as a raw listings.json. Each row carries its own employer, so one board
 // covers hundreds of companies (a long tail beyond our named list). They run
 // AFTER the company sites so cross-source dedup keeps the richer native listing
@@ -323,43 +323,16 @@ export const ALL_COMPANIES: DiscoveryCompany[] = [...API_COMPANIES, ...BROWSER_C
 
 export const BOARD_SOURCES: ApiCompany[] = [
   {
-    name: "SimplifyJobs New-Grad",
+    name: "SimplifyJobs Summer 2027 Internships",
     method: "api",
     system: "githubboard",
     countryFilter: "post",
     queryTerms: SWE,
     board: {
       owner: "SimplifyJobs",
-      repo: "New-Grad-Positions",
+      repo: "Summer2027-Internships",
       ref: "dev",
       path: ".github/scripts/listings.json",
-    },
-  },
-  {
-    name: "vanshb03 New-Grad-2026",
-    method: "api",
-    system: "githubboard",
-    countryFilter: "post",
-    queryTerms: SWE,
-    board: {
-      owner: "vanshb03",
-      repo: "New-Grad-2026",
-      ref: "main",
-      path: ".github/scripts/listings.json",
-    },
-  },
-  {
-    name: "Canada New-Grad 2026",
-    method: "api",
-    system: "githubboard",
-    countryFilter: "post",
-    queryTerms: SWE,
-    board: {
-      owner: "JeelTikiwala",
-      repo: "New-Grad-2026",
-      ref: "main",
-      path: "README.md",
-      format: "markdown",
     },
   },
   {

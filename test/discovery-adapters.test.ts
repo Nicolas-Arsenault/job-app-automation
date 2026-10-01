@@ -599,9 +599,20 @@ describe("github board adapter (aggregator listings.json)", () => {
 | **Closed Co** | Software Developer | Vancouver, Canada | [Apply](https://jobs.example.com/closed) | Closed |
 `;
     vi.stubGlobal("fetch", vi.fn(async () => new Response(markdown)));
-    const board = BOARD_SOURCES.find(
-      (candidate) => candidate.name === "Canada New-Grad 2026",
-    )!;
+    const board: ApiCompany = {
+      name: "Canada internship Markdown fixture",
+      method: "api",
+      system: "githubboard",
+      countryFilter: "post",
+      queryTerms: ["software"],
+      board: {
+        owner: "fixture",
+        repo: "canada-internships",
+        ref: "main",
+        path: "README.md",
+        format: "markdown",
+      },
+    };
 
     const posts = await fetchCompanyPostings(board);
 
@@ -1209,20 +1220,19 @@ describe("discovery catalog", () => {
   });
 
   it("registers the GitHub board sources with a repo config", () => {
-    expect(BOARD_SOURCES.length).toBeGreaterThanOrEqual(5);
+    expect(BOARD_SOURCES).toHaveLength(3);
     for (const b of BOARD_SOURCES) {
       expect(b.system).toBe("githubboard");
       expect(b.board?.owner).toBeTruthy();
       expect(b.board?.repo).toBeTruthy();
       expect(b.board?.path).toBeTruthy();
     }
-    expect(
-      BOARD_SOURCES.find((source) => source.name === "Canada New-Grad 2026")?.board,
-    ).toMatchObject({
-      owner: "JeelTikiwala",
-      repo: "New-Grad-2026",
-      format: "markdown",
-    });
+    expect(BOARD_SOURCES.map((source) => source.board?.repo)).toEqual([
+      "Summer2027-Internships",
+      "canada-tech-internships-summer-2027",
+      "Summer2027-Internships",
+    ]);
+    expect(BOARD_SOURCES.some((source) => /new-?grad/i.test(source.board?.repo ?? ""))).toBe(false);
   });
 
   it("registers the Y Combinator expansion source with a directory URL", () => {

@@ -103,8 +103,8 @@ If a direct source sees the same requisition again, that row reopens instead of 
 ## Features
 
 - **Company-site discovery** — 95+ public-feed companies (including Canada-first and
-  quant / HFT firms) + Playwright scraping for Apple and Shopify, plus five community
-  GitHub boards including Canada-specific new-grad and internship feeds for the long tail
+  quant / HFT firms) + Playwright scraping for Apple and Shopify, plus three internship-only
+  community GitHub boards including a Canada-specific feed for the long tail
   of employers. See [Discovery pipeline](#discovery-pipeline).
 - **Two separate queues** — US and Canada, newest-first, with last-24h / 7d / 30d filters.
 - **Rate-safe dashboard refreshes** — the shared scrape control enforces a durable two-hour
