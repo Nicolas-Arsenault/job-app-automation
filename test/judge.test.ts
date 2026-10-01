@@ -252,6 +252,45 @@ describe("scoreAllJobs", () => {
     ).toBeNull();
   });
 
+  it("hard-rejects graduate-only roles before company and golden score boosts", async () => {
+    await saveProfile({
+      degree: "Bachelor's degree",
+      fieldOfStudy: "Software Engineering",
+      skills: ["Python"],
+      targetRoles: ["Software Engineer"],
+    });
+    await prisma.companyTier.create({
+      data: { company: "Prestige AI", tier: "S" },
+    });
+    const masters = await makeJob({
+      key: "masters-only",
+      title: "Machine Learning Intern (Masters) - Summer 2027",
+      company: "Prestige AI",
+      description: "Are working towards a Masters degree in Computer Science.",
+      skills: ["Python"],
+    });
+    const phd = await makeJob({
+      key: "phd-only",
+      title: "Machine Learning Intern 2027",
+      company: "Prestige AI",
+      description: "Currently pursuing a Ph.D. in Computer Science.",
+      skills: ["Python"],
+      fitScore: 92,
+      fitProvider: "openai",
+    });
+
+    await scoreAllJobs();
+
+    for (const id of [masters.id, phd.id]) {
+      const scored = await prisma.job.findUniqueOrThrow({ where: { id } });
+      expect(scored.fitScore).toBe(0);
+      expect(scored.fitSummary).toMatch(/ineligible/i);
+      expect(JSON.parse(scored.fitReasons ?? "[]")).toEqual(
+        expect.arrayContaining([expect.stringMatching(/profile has Bachelor's degree/i)]),
+      );
+    }
+  });
+
   it("uses saved résumé text as positive skill evidence without making missing pay a gap", async () => {
     await saveProfile({
       skills: ["Python"],

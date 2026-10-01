@@ -209,22 +209,62 @@ const INTERN_TITLE = new RegExp(
 
 const STRUCTURED_SENIOR_LEVEL = /\bexperience level:\s*(?:mid-senior level|director|executive)\b/i;
 
-// Advanced degree explicitly REQUIRED (not merely preferred / "or").
-const ADVANCED_DEGREE_REQUIRED = new RegExp(
-  [
-    "ph\\.?d\\.? (is )?(required|degree required)",
-    "requires? a ph\\.?d",
-    "must have (a )?(ph\\.?d|master)",
-    "master'?s degree (is )?required",
-    "master'?s (is )?required",
-    "requires? a master",
-    "phd or equivalent required",
-  ].join("|"),
-  "i",
-);
+export type AdvancedDegreeLevel = "masters" | "doctorate";
 
-// Any wording that shows the role is happy with a bachelor's (or less).
-const BACHELOR_OK = /(bachelor|\bb\.?s\.?\b|\bb\.?a\.?\b|undergraduate|associate'?s|high school|no degree|equivalent (practical )?experience|or equivalent)/i;
+const BACHELOR_DEGREE = /\b(?:bachelor(?:'s|s)?|undergraduate|b\.?\s*[sa]\.?)\b/i;
+const DOCTORATE_DEGREE = /\b(?:ph\.?\s*d\.?|doctor(?:al|ate))\b/i;
+const MASTERS_DEGREE = /\bmaster(?:'s|s)?(?:\s+degree)?\b|\bm\.?\s*s\.?\s*\/\s*ph\.?\s*d\.?\b/i;
+const GRADUATE_ONLY = /\bgraduate\s+(?:degree|student|program)\b/i;
+const DEGREE_HARD_CONTEXT = /\b(?:required|requires?|must(?:\s+have|\s+be)?|minimum qualification|eligib(?:le|ility))\b/i;
+const DEGREE_ENROLLMENT_CONTEXT = /\b(?:currently\s+)?(?:pursu(?:e|ing)|work(?:ing)?\s+toward(?:s)?|enroll(?:ed|ment)?|student|candidate)\b/i;
+const DEGREE_OPTIONAL_CONTEXT = /\b(?:preferred|nice to have|a plus|not (?:a )?must)\b/i;
+
+function degreeClauses(text: string): string[] {
+  return text
+    .replace(/<\/(?:li|p|h[1-6]|div|ul|ol)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:nbsp|amp|quot|#39);/gi, " ")
+    .split(/\n|(?<=[.!?])\s+/)
+    .map((clause) => clause.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+/**
+ * Return the minimum advanced degree a posting makes mandatory. Internship
+ * postings commonly express this as enrollment ("working towards a Master's")
+ * rather than with the literal word "required", so both forms are hard gates.
+ * A Bachelor's option in the same requirement clause keeps the role eligible.
+ */
+export function requiredAdvancedDegreeLevel(
+  input: EntryLevelInput,
+): AdvancedDegreeLevel | null {
+  const title = input.title ?? "";
+  const description = input.description ?? "";
+
+  // Community boards frequently encode the degree track only in the title.
+  if (DOCTORATE_DEGREE.test(title) && !MASTERS_DEGREE.test(title)) {
+    return "doctorate";
+  }
+  if (MASTERS_DEGREE.test(title) || GRADUATE_ONLY.test(title)) {
+    return "masters";
+  }
+
+  for (const clause of degreeClauses(description)) {
+    if (BACHELOR_DEGREE.test(clause)) continue;
+    const hasHardContext =
+      DEGREE_HARD_CONTEXT.test(clause) || DEGREE_ENROLLMENT_CONTEXT.test(clause);
+    if (!hasHardContext && DEGREE_OPTIONAL_CONTEXT.test(clause)) continue;
+    if (!hasHardContext) continue;
+
+    // A Master's/PhD alternative has Master's as its minimum qualifying level.
+    if (MASTERS_DEGREE.test(clause) || GRADUATE_ONLY.test(clause)) {
+      return "masters";
+    }
+    if (DOCTORATE_DEGREE.test(clause)) return "doctorate";
+  }
+
+  return null;
+}
 
 // Maximum years-of-experience a role may REQUIRE and still count as entry-level.
 // The user wants entry-level roles OR roles with no YoE specified, now widened
@@ -392,7 +432,7 @@ export function classifyEntryLevel(
   const hasNumericLevelTitle = NUMERIC_LEVEL_TITLE.test(title);
   const hasSeniorTitle = hasExplicitSeniorTitle || hasNumericLevelTitle;
   const hasEntrySignal = ENTRY_TITLE.test(title);
-  const rawAdvanced = ADVANCED_DEGREE_REQUIRED.test(desc) && !BACHELOR_OK.test(desc);
+  const rawAdvanced = requiredAdvancedDegreeLevel({ title, description: desc }) !== null;
   const blockAdvanced = o.excludeAdvancedDegree && rawAdvanced;
   const minYearsExperience = minRequiredBachelorYoE(blob);
   const hasHighYoE = minYearsExperience !== null && minYearsExperience > o.maxYoE;

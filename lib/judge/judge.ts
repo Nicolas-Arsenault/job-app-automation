@@ -18,7 +18,11 @@ import {
   companyTierScoreBand,
   tierFirstJudgeScore,
 } from "./scoring";
-import { minRequiredBachelorYoE } from "../discovery/entryLevel";
+import {
+  minRequiredBachelorYoE,
+  requiredAdvancedDegreeLevel,
+  type AdvancedDegreeLevel,
+} from "../discovery/entryLevel";
 import { canonicalSkill } from "../discovery/enrich";
 import { getDiscoveryConfig } from "../discovery/config";
 import {
@@ -175,6 +179,45 @@ export function buildResumeContext(profile: ProfileData): ResumeContext {
   const summary = compactText(profile.summary, qualifications);
   const text = compactText(profile.summary, qualifications, profile.resumeText);
   return { skills, titles, summary, text };
+}
+
+type CandidateDegreeLevel = "bachelors" | AdvancedDegreeLevel;
+
+function candidateDegreeLevel(profile: ProfileData): CandidateDegreeLevel | null {
+  const degree =
+    profile.degree?.trim() === "Other" && profile.degreeOther?.trim()
+      ? profile.degreeOther.trim()
+      : profile.degree?.trim() ?? "";
+  if (/\b(?:ph\.?\s*d\.?|doctor(?:al|ate))\b/i.test(degree)) return "doctorate";
+  if (/\bmaster(?:'s|s)?\b/i.test(degree)) return "masters";
+  if (/\b(?:bachelor(?:'s|s)?|undergraduate|b\.?\s*[sa]\.?)\b/i.test(degree)) {
+    return "bachelors";
+  }
+  return null;
+}
+
+function degreeEligibilityGap(
+  profile: ProfileData,
+  requirement: AdvancedDegreeLevel | null,
+): string | null {
+  if (!requirement) return null;
+  const candidate = candidateDegreeLevel(profile);
+  const rank: Record<CandidateDegreeLevel, number> = {
+    bachelors: 1,
+    masters: 2,
+    doctorate: 3,
+  };
+  if (candidate && rank[candidate] >= rank[requirement]) return null;
+
+  const requiredLabel = requirement === "doctorate" ? "a PhD/doctorate" : "a Master's degree";
+  const savedLabel = candidate
+    ? candidate === "bachelors"
+      ? "Bachelor's degree"
+      : candidate === "masters"
+        ? "Master's degree"
+        : "doctorate"
+    : "no matching degree level";
+  return `Role requires ${requiredLabel}; profile has ${savedLabel}`;
 }
 
 function parseJobSkills(raw: string | null): string[] {
@@ -407,6 +450,32 @@ export async function scoreAllJobs(opts: ScoreAllJobsOptions = {}): Promise<Scor
   reportProgress(null);
 
   for (const job of jobs) {
+    const degreeGap = degreeEligibilityGap(
+      profile,
+      requiredAdvancedDegreeLevel({
+        title: job.title,
+        description: job.description,
+      }),
+    );
+    if (degreeGap) {
+      const updated = await updateJobScoreFromSnapshot(job, {
+        fitScore: 0,
+        fitReasons: JSON.stringify([gapAdvice(degreeGap)]),
+        fitSummary: `Weak fit: Ineligible — ${degreeGap}.`,
+        fitProvider: job.fitProvider ?? "deterministic",
+        fitScoredAt: now,
+      });
+      if (updated) scored++;
+      else skipped++;
+      processed++;
+      reportProgress({
+        id: job.id,
+        company: job.company,
+        title: job.title,
+      });
+      continue;
+    }
+
     const tier = tierByCompany.get(normalizeCompanyKey(job.company)) ?? null;
     const canonicalLoc = normalizeLocation(job.location);
     const locTier = canonicalLoc
