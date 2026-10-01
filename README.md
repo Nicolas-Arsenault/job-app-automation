@@ -113,8 +113,8 @@ If a direct source sees the same requisition again, that row reopens instead of 
   reconciliation and Judge pipeline as the dashboard, skips overlapping cycles, and does not
   consume the manual refresh cooldown.
 - **Discord alerts** — set a local `DISCORD_WEBHOOK_URL` to receive batched alerts for genuinely
-  new, Strong-fit internships first seen in the completed run. Existing rows are never backfilled;
-  `DISCORD_MIN_FIT_SCORE` controls the cutoff and defaults to the dashboard's Strong-fit score of 70.
+  new internships first seen in the completed run. Existing rows are never backfilled and fit score
+  does not affect notification eligibility.
   Alerts also require a source-provided posting time within `DISCORD_MAX_POST_AGE_MINUTES` (60 by
   default). Canadian roles are unrestricted; US roles marked no-sponsorship or citizenship/clearance
   required are suppressed, while explicit sponsorship and unstated/unknown cases remain eligible.

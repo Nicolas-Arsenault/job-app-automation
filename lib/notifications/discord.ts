@@ -1,5 +1,4 @@
 import { prisma } from "../db";
-import { STRONG_MIN } from "../judge/status";
 
 const DISCORD_HOSTS = new Set([
   "discord.com",
@@ -25,15 +24,6 @@ export interface DiscordJob {
   firstSeenAt: Date;
   discoverySystem: string | null;
   fitScore: number | null;
-}
-
-export function discordMinimumFitScore(
-  value: string | number | undefined = process.env.DISCORD_MIN_FIT_SCORE,
-): number {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
-    ? Math.round(parsed)
-    : STRONG_MIN;
 }
 
 export function discordMaximumPostAgeMinutes(
@@ -93,8 +83,8 @@ export function discordPayload(jobs: DiscordJob[]) {
     allowed_mentions: { parse: [] as string[] },
     content:
       jobs.length === 1
-        ? "New high-fit software internship detected"
-        : `${jobs.length} new high-fit software internships detected`,
+        ? "New eligible software internship detected"
+        : `${jobs.length} new eligible software internships detected`,
     embeds: jobs.slice(0, 10).map((job) => ({
       title: truncate(job.title, 256),
       url: job.applyUrl,
@@ -153,7 +143,6 @@ export async function notifyDiscordForDiscovery(
   deps: {
     webhookUrl?: string;
     fetchImpl?: typeof fetch;
-    minFitScore?: number;
     maxPostAgeMinutes?: number;
     now?: Date;
   } = {},
@@ -170,7 +159,6 @@ export async function notifyDiscordForDiscovery(
     };
   }
 
-  const minFitScore = discordMinimumFitScore(deps.minFitScore);
   const maxPostAgeMinutes = discordMaximumPostAgeMinutes(deps.maxPostAgeMinutes);
   const now = deps.now ?? new Date();
   const postedAfter = new Date(now.getTime() - maxPostAgeMinutes * 60_000);
@@ -182,7 +170,6 @@ export async function notifyDiscordForDiscovery(
       isEntryLevel: true,
       employmentType: "intern",
       availabilityStatus: { not: "closed" },
-      fitScore: { gte: minFitScore },
       postedAt: { gte: postedAfter, lte: postedBefore },
       OR: [
         { country: "CA" },

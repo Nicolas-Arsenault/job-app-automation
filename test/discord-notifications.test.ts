@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "../lib/db";
 import {
   discordMaximumPostAgeMinutes,
-  discordMinimumFitScore,
   discordPayload,
   isDiscordWebhookUrl,
   notifyDiscordForDiscovery,
@@ -13,10 +12,7 @@ beforeEach(async () => {
 });
 
 describe("Discord internship notifications", () => {
-  it("uses the dashboard's Strong fit threshold by default", () => {
-    expect(discordMinimumFitScore(undefined)).toBe(70);
-    expect(discordMinimumFitScore("80")).toBe(80);
-    expect(discordMinimumFitScore("invalid")).toBe(70);
+  it("defaults Discord freshness to one hour", () => {
     expect(discordMaximumPostAgeMinutes(undefined)).toBe(60);
     expect(discordMaximumPostAgeMinutes("30")).toBe(30);
     expect(discordMaximumPostAgeMinutes("0")).toBe(60);
@@ -143,7 +139,8 @@ describe("Discord internship notifications", () => {
           country: "US",
           isEntryLevel: true,
           employmentType: "intern",
-          fitScore: 69,
+          fitScore: 20,
+          postedAt: new Date("2026-10-01T12:25:00Z"),
           firstSeenAt: new Date("2026-10-01T12:02:00Z"),
         },
       ],
@@ -159,12 +156,12 @@ describe("Discord internship notifications", () => {
       now: new Date("2026-10-01T12:30:00Z"),
     });
 
-    expect(result).toMatchObject({ configured: true, candidates: 2, sent: 2, failedBatches: 0 });
+    expect(result).toMatchObject({ configured: true, candidates: 3, sent: 3, failedBatches: 0 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const init = fetchImpl.mock.calls[0][1] as RequestInit;
     expect(String(init.body)).toContain("Software Engineer Intern");
     expect(String(init.body)).not.toContain("Software Engineer\"");
-    expect(String(init.body)).not.toContain("Lower Fit Co");
+    expect(String(init.body)).toContain("Lower Fit Co");
     expect(String(init.body)).toContain("Unknown Visa Co");
     expect(String(init.body)).not.toContain("No Sponsor Co");
     expect(String(init.body)).not.toContain("Citizens Only Co");
