@@ -12,10 +12,10 @@ beforeEach(async () => {
 });
 
 describe("Discord internship notifications", () => {
-  it("defaults Discord freshness to one hour", () => {
-    expect(discordMaximumPostAgeMinutes(undefined)).toBe(60);
+  it("defaults Discord freshness to two hours", () => {
+    expect(discordMaximumPostAgeMinutes(undefined)).toBe(120);
     expect(discordMaximumPostAgeMinutes("30")).toBe(30);
-    expect(discordMaximumPostAgeMinutes("0")).toBe(60);
+    expect(discordMaximumPostAgeMinutes("0")).toBe(120);
   });
 
   it("accepts only actual Discord webhook URLs", () => {

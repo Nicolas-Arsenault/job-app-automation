@@ -32,7 +32,7 @@ export function discordMaximumPostAgeMinutes(
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) && parsed >= 1 && parsed <= 24 * 60
     ? Math.round(parsed)
-    : 60;
+    : 120;
 }
 
 export function isDiscordWebhookUrl(value: string): boolean {

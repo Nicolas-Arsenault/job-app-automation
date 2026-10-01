@@ -109,14 +109,14 @@ If a direct source sees the same requisition again, that row reopens instead of 
 - **Two separate queues** — US and Canada, newest-first, with last-24h / 7d / 30d filters.
 - **Rate-safe dashboard refreshes** — the shared scrape control enforces a durable two-hour
   cooldown and shows a live countdown before the next run can start.
-- **Hourly scheduled discovery** — `npm run cron` runs the same active discovery,
-  reconciliation and Judge pipeline at minute 17 of every hour, skips overlapping cycles, and
+- **Two-hour scheduled discovery** — `npm run cron` runs the same active discovery,
+  reconciliation and Judge pipeline at minute 17 every two hours, skips overlapping cycles, and
   does not consume the manual refresh cooldown. Startup scans are disabled by default so worker
   restarts cannot create request bursts.
 - **Discord alerts** — set a local `DISCORD_WEBHOOK_URL` to receive batched alerts for genuinely
   new internships first seen in the completed run. Existing rows are never backfilled and fit score
   does not affect notification eligibility.
-  Alerts also require a source-provided posting time within `DISCORD_MAX_POST_AGE_MINUTES` (60 by
+  Alerts also require a source-provided posting time within `DISCORD_MAX_POST_AGE_MINUTES` (120 by
   default). Canadian roles are unrestricted; US roles marked no-sponsorship or citizenship/clearance
   required are suppressed, while explicit sponsorship and unstated/unknown cases remain eligible.
 - **Change-aware GitHub boards** — ETag / Last-Modified validators avoid re-downloading unchanged
@@ -574,7 +574,7 @@ warm-intro tagging — see [Warm intros](#warm-intros-linkedin-connections).
 ## Scheduled scanning
 
 ```bash
-npm run cron     # runs on SCAN_CRON (default: hourly at :17); startup scan is opt-in
+npm run cron     # runs on SCAN_CRON (default: every two hours at :17); startup scan is opt-in
 npm run discord:test  # sends one safe connectivity message when DISCORD_WEBHOOK_URL is set
 ```
 
