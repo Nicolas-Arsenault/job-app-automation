@@ -126,6 +126,10 @@ describe("detectAtsFromHtml", () => {
     const html = `<a href="https://jobs.ashbyhq.com/acme-co">Careers</a>`;
     expect(detectAtsFromHtml(html)).toEqual({ system: "ashby", token: "acme-co" });
   });
+  it("detects SmartRecruiters", () => {
+    const html = `<a href="https://careers.smartrecruiters.com/Ubisoft2">Careers</a>`;
+    expect(detectAtsFromHtml(html)).toEqual({ system: "smartrecruiters", token: "Ubisoft2" });
+  });
   it("rejects blocklisted asset-path tokens", () => {
     // A greenhouse asset URL whose captured segment is a marketing path, not a board.
     const html = `<img src="https://boards.greenhouse.io/embed/image.png">`;

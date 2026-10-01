@@ -16,6 +16,7 @@
     "db:reset": "prisma migrate reset --force",
     "scan": "tsx scripts/scan.ts",
     "cron": "tsx scripts/cron.ts",
+    "discord:test": "tsx scripts/test-discord.ts",
     "match:export": "tsx scripts/match.ts export",
     "match:apply": "tsx scripts/match.ts apply",
     "match:rescore": "tsx scripts/match.ts rescore",

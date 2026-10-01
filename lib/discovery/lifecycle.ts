@@ -236,6 +236,7 @@ const AUTHORITATIVE_SYSTEMS = new Set([
   "ashby",
   "workable",
   "teamtailor",
+  "smartrecruiters",
 ]);
 const COMPLETE_SEARCH_SYSTEMS = new Set(["phenom", "spotify", "githubboard"]);
 export const POSTING_VERIFICATION_CACHE_MS = 6 * 60 * 60 * 1000;
@@ -267,7 +268,9 @@ export function describeApiSource(company: ApiCompany): DiscoverySourceDescripto
     name: company.name,
     system: company.system,
     company:
-      company.system === "githubboard" || company.system === "ycombinator"
+      company.system === "githubboard" ||
+      company.system === "ycombinator" ||
+      company.system === "watchlist"
         ? null
         : canonicalCompanyName(company.name),
     authoritative,

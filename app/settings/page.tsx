@@ -77,6 +77,7 @@ export default function SettingsPage() {
   const [roleKeywordsText, setRoleKeywordsText] = useState("");
   const [excludeTitleKeywordsText, setExcludeTitleKeywordsText] = useState("");
   const [queryTermsText, setQueryTermsText] = useState("");
+  const [watchedCompaniesText, setWatchedCompaniesText] = useState("");
   const [goldenTitleKeywordsText, setGoldenTitleKeywordsText] = useState("");
   const [goldenDescriptionKeywordsText, setGoldenDescriptionKeywordsText] =
     useState("");
@@ -112,6 +113,11 @@ export default function SettingsPage() {
         setRoleKeywordsText(listText(data.config.roleKeywords));
         setExcludeTitleKeywordsText(listText(data.config.excludeTitleKeywords));
         setQueryTermsText(listText(data.config.queryTerms));
+        setWatchedCompaniesText(
+          data.config.watchedCompanies
+            .map((company) => `${company.name} | ${company.website}`)
+            .join("\n"),
+        );
         setGoldenTitleKeywordsText(
           listText(data.config.goldenJobs.titleKeywords),
         );
@@ -150,6 +156,11 @@ export default function SettingsPage() {
       setRoleKeywordsText(listText(data.config.roleKeywords));
       setExcludeTitleKeywordsText(listText(data.config.excludeTitleKeywords));
       setQueryTermsText(listText(data.config.queryTerms));
+      setWatchedCompaniesText(
+        data.config.watchedCompanies
+          .map((company) => `${company.name} | ${company.website}`)
+          .join("\n"),
+      );
       setGoldenTitleKeywordsText(
         listText(data.config.goldenJobs.titleKeywords),
       );
@@ -246,6 +257,11 @@ export default function SettingsPage() {
     setRoleKeywordsText(listText(saved.roleKeywords));
     setExcludeTitleKeywordsText(listText(saved.excludeTitleKeywords));
     setQueryTermsText(listText(saved.queryTerms));
+    setWatchedCompaniesText(
+      saved.watchedCompanies
+        .map((company) => `${company.name} | ${company.website}`)
+        .join("\n"),
+    );
     setGoldenTitleKeywordsText(listText(saved.goldenJobs.titleKeywords));
     setGoldenDescriptionKeywordsText(
       listText(saved.goldenJobs.descriptionKeywords),
@@ -286,6 +302,13 @@ export default function SettingsPage() {
         roleKeywords: parseList(roleKeywordsText),
         excludeTitleKeywords: parseList(excludeTitleKeywordsText),
         queryTerms: parseList(queryTermsText),
+        watchedCompanies: watchedCompaniesText
+          .split(/\r?\n/)
+          .map((line) => {
+            const [name, ...websiteParts] = line.split("|");
+            return { name: name.trim(), website: websiteParts.join("|").trim() };
+          })
+          .filter((company) => company.name && company.website),
         goldenJobs: goldenJobsDraft(config),
       },
       "Settings saved. Golden filtering updates immediately; rerun Judge to refresh scores.",
@@ -667,6 +690,30 @@ export default function SettingsPage() {
                       </span>
                     </span>
                   </label>
+
+                  <label className="flex items-start gap-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 transition-colors hover:bg-indigo-50 dark:border-indigo-900 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/35">
+                    <input
+                      type="checkbox"
+                      className={checkbox}
+                      checked={config.internshipsOnly}
+                      onChange={(event) =>
+                        updateConfig({
+                          internshipsOnly: event.target.checked,
+                          includeInternships: event.target.checked
+                            ? true
+                            : config.includeInternships,
+                        })
+                      }
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
+                        Internships only
+                      </span>
+                      <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                        Hard discovery gate: reject full-time new-grad and other non-internship roles.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -832,6 +879,26 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
+          </section>
+
+          <section className={cls.card}>
+            <h2 className="text-lg font-semibold">Company watchlist</h2>
+            <p className={helper}>
+              Add mid-size or large technology companies missing from the built-in catalog. The
+              resolver follows each public website to its Greenhouse, Lever, Ashby, or
+              SmartRecruiters board and then polls the original ATS directly.
+            </p>
+            <textarea
+              id="watchedCompanies"
+              className={cls.input + " mt-4 min-h-36 resize-y font-mono text-sm"}
+              value={watchedCompaniesText}
+              onChange={(event) => {
+                setWatchedCompaniesText(event.target.value);
+                setMessage(null);
+              }}
+              placeholder={"Company name | https://company.example\nAnother company | https://another.example"}
+            />
+            <p className={helper}>One company per line in the format: name | public website URL.</p>
           </section>
 
           <section className={cls.card}>

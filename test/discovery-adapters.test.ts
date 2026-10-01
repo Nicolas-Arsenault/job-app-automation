@@ -556,6 +556,40 @@ describe("github board adapter (aggregator listings.json)", () => {
     expect(beta.country).toBe("CA");
   });
 
+  it("reuses a cached board body after GitHub returns 304", async () => {
+    const board = BOARD_SOURCES[0];
+    const b = board.board!;
+    const cacheKey = `githubboard:${b.owner}/${b.repo}/${b.ref}/${b.path}`;
+    await prisma.discoveryHttpCache.deleteMany({ where: { key: cacheKey } });
+    const listings = [
+      {
+        company_name: "Acme",
+        title: "Software Engineer Intern",
+        url: "https://example.test/jobs/1",
+        locations: ["Toronto, Canada"],
+        active: true,
+        id: "etag-row",
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(listings), {
+          status: 200,
+          headers: { ETag: '"board-v1"', "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await fetchCompanyPostings(board)).toHaveLength(1);
+    expect(await fetchCompanyPostings(board)).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      headers: expect.objectContaining({ "If-None-Match": '"board-v1"' }),
+    });
+  });
+
   it("parses open roles from a Canada-focused Markdown board", async () => {
     const markdown = `
 | Company | Role | Location | Application / Link | Status |
@@ -586,6 +620,77 @@ describe("github board adapter (aggregator listings.json)", () => {
         applyUrl: "https://jobs.example.com/acme-2",
       },
     ]);
+  });
+});
+
+describe("SmartRecruiters adapter", () => {
+  it("paginates public country feeds and hydrates software internship details", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/postings?") && url.includes("country=us")) {
+        return jsonResponse({
+          totalFound: 2,
+          content: [
+            {
+              id: "744000100000001",
+              name: "Software Engineer Intern",
+              releasedDate: "2026-09-30T12:00:00Z",
+              location: { fullLocation: "Austin, TX, United States" },
+              experienceLevel: { id: "internship", label: "Internship" },
+            },
+            {
+              id: "744000100000002",
+              name: "Marketing Intern",
+              location: { fullLocation: "Austin, TX, United States" },
+            },
+          ],
+        });
+      }
+      if (url.includes("/postings?") && url.includes("country=ca")) {
+        return jsonResponse({ totalFound: 0, content: [] });
+      }
+      if (url.endsWith("/postings/744000100000001")) {
+        return jsonResponse({
+          id: "744000100000001",
+          name: "Software Engineer Intern",
+          releasedDate: "2026-09-30T12:00:00Z",
+          applyUrl: "https://jobs.smartrecruiters.com/Acme/744000100000001-software-engineer-intern",
+          location: { fullLocation: "Austin, TX, United States" },
+          experienceLevel: { id: "internship", label: "Internship" },
+          typeOfEmployment: { id: "intern", label: "Intern" },
+          jobAd: {
+            sections: {
+              jobDescription: { title: "Job Description", text: "<p>Build backend APIs.</p>" },
+            },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings(
+      {
+        name: "Acme",
+        method: "api",
+        system: "smartrecruiters",
+        token: "Acme",
+        countryFilter: "native",
+        queryTerms: ["software engineer"],
+      },
+      { countries: ["US", "CA"] },
+    );
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      company: "Acme",
+      system: "smartrecruiters",
+      title: "Software Engineer Intern",
+      country: "US",
+      externalId: "744000100000001",
+    });
+    expect(posts[0].description).toContain("Experience level: Internship");
+    expect(posts[0].description).toContain("Build backend APIs");
   });
 });
 
@@ -1127,7 +1232,8 @@ describe("discovery catalog", () => {
     // It must run after every named company so native listings win dedup.
     const ycIdx = DISCOVERY_SOURCES.indexOf(YC_SOURCE);
     const lastNamed = DISCOVERY_SOURCES.reduce(
-      (acc, c, i) => (c.system !== "ycombinator" && c.system !== "githubboard" ? i : acc),
+      (acc, c, i) =>
+        (!["ycombinator", "watchlist", "githubboard"].includes(c.system) ? i : acc),
       -1,
     );
     expect(ycIdx).toBeGreaterThan(lastNamed);

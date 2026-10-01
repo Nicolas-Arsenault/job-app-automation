@@ -18,7 +18,17 @@ export interface GoldenJobMatch {
 
 export const DEFAULT_GOLDEN_JOB_CONFIG: GoldenJobConfig = {
   enabled: true,
-  titleKeywords: ["new grad", "new graduate", "graduate", "2027"],
+  titleKeywords: [
+    "new grad",
+    "new graduate",
+    "graduate",
+    "2027",
+    "software engineer intern",
+    "software developer intern",
+    "software engineering intern",
+    "backend intern",
+    "swe intern",
+  ],
   descriptionKeywords: [
     "new grad",
     "new graduate",
@@ -27,6 +37,11 @@ export const DEFAULT_GOLDEN_JOB_CONFIG: GoldenJobConfig = {
     "graduating in 2027",
     "2027 graduate",
     "2027 graduation",
+    "summer 2027 internship",
+    "2027 internship",
+    "software engineering internship",
+    "software developer internship",
+    "software engineer internship",
   ],
 };
 

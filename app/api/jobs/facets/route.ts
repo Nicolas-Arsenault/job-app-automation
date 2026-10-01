@@ -55,6 +55,9 @@ export async function GET(req: NextRequest) {
   const matchGoldenJob = createGoldenJobMatcher(
     discoveryConfig.goldenJobs,
   );
+  const visibleJobs = discoveryConfig.internshipsOnly
+    ? jobs.filter((job) => job.employmentType === "intern")
+    : jobs;
 
   const skillCounts = new Map<string, number>();
   const sources = new Map<string, number>();
@@ -72,7 +75,7 @@ export async function GET(req: NextRequest) {
     m.set(k, (m.get(k) ?? 0) + 1);
   };
 
-  for (const j of jobs) {
+  for (const j of visibleJobs) {
     bump(sources, j.discoverySystem);
     bump(platforms, j.atsType || "unknown");
     bump(categories, categorizeCompany(j.company, fallbackForSystem(j.discoverySystem)));
@@ -115,6 +118,6 @@ export async function GET(req: NextRequest) {
     maxSalary,
     withConnections,
     golden,
-    total: jobs.length,
+    total: visibleJobs.length,
   });
 }

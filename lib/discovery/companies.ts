@@ -33,6 +33,7 @@ export type DiscoverySystem =
   | "ashby"
   | "workable"
   | "teamtailor"
+  | "smartrecruiters"
   | "amazon"
   | "uber"
   | "netflix"
@@ -43,6 +44,7 @@ export type DiscoverySystem =
   | "microsoft"
   | "githubboard"
   | "ycombinator"
+  | "watchlist"
   | "workday";
 
 export type BrowserSystem =
@@ -94,6 +96,8 @@ export interface ApiCompany {
   // hiring YC companies. The runner resolves each company's ATS at scrape time
   // (see lib/discovery/yc.ts), so one entry covers hundreds of employers.
   yc?: { directoryUrl: string };
+  // User-configured company website expansion source.
+  watchlist?: true;
   // Does the endpoint filter US/CA server-side, or must we post-filter?
   countryFilter: "native" | "post";
   // Software keywords used to scope the query.
@@ -117,7 +121,7 @@ const SWE = ["software engineer", "software developer"];
 const SWE_BROAD = ["software engineer", "software developer", "machine learning", "devops"];
 
 // ---------------------------------------------------------------------------
-// API companies (93) — direct public JSON endpoints, verified live. Includes
+// API companies (96) — direct public JSON endpoints, verified live. Includes
 // Canada-first and quant / trading blocks near the end.
 // ---------------------------------------------------------------------------
 
@@ -176,6 +180,11 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Rivian", method: "api", system: "phenom", token: "careers.rivian.com", countryFilter: "post", queryTerms: SWE },
   { name: "Spotify", method: "api", system: "spotify", countryFilter: "post", queryTerms: SWE },
   { name: "Intuit", method: "api", system: "talentbrew", countryFilter: "post", queryTerms: SWE, talentbrew: { host: "jobs.intuit.com" } },
+
+  // ---- SmartRecruiters public Posting API
+  { name: "Ubisoft", method: "api", system: "smartrecruiters", token: "Ubisoft2", countryFilter: "native", queryTerms: SWE_BROAD },
+  { name: "Bosch", method: "api", system: "smartrecruiters", token: "BoschGroup", countryFilter: "native", queryTerms: SWE_BROAD },
+  { name: "Visa", method: "api", system: "smartrecruiters", token: "Visa", countryFilter: "native", queryTerms: SWE_BROAD },
 
   // ---- Workday CXS: POST https://<host>/wday/cxs/<tenant>/<site>/jobs
   { name: "NVIDIA", method: "api", system: "workday", countryFilter: "post", queryTerms: SWE, workday: { host: "nvidia.wd5.myworkdayjobs.com", tenant: "nvidia", site: "NVIDIAExternalCareerSite" } },
@@ -398,7 +407,21 @@ export const YC_SOURCE: ApiCompany = {
   yc: { directoryUrl: "https://yc-oss.github.io/api/companies/hiring.json" },
 };
 
+export const WATCHLIST_SOURCE: ApiCompany = {
+  name: "Company watchlist",
+  method: "api",
+  system: "watchlist",
+  countryFilter: "post",
+  queryTerms: SWE_BROAD,
+  watchlist: true,
+};
+
 // The full set the discovery runner iterates: named company APIs first, then the
 // aggregator sources (YC expansion, then GitHub boards) so dupes of already-
 // covered roles are suppressed in favor of the richer native listing.
-export const DISCOVERY_SOURCES: ApiCompany[] = [...API_COMPANIES, YC_SOURCE, ...BOARD_SOURCES];
+export const DISCOVERY_SOURCES: ApiCompany[] = [
+  ...API_COMPANIES,
+  YC_SOURCE,
+  WATCHLIST_SOURCE,
+  ...BOARD_SOURCES,
+];

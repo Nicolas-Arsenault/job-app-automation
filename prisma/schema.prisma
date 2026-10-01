@@ -183,7 +183,20 @@ model DiscoveryRunState {
   id              String    @id @default("default")
   lastStartedAt   DateTime?
   lastSucceededAt DateTime?
+  lastManualSucceededAt DateTime?
   updatedAt       DateTime  @updatedAt
+}
+
+// Conditional-request cache for community board files. The cached body lets a
+// 304 response replay sightings without treating unchanged listings as absent.
+model DiscoveryHttpCache {
+  key           String   @id
+  etag          String?
+  lastModified  String?
+  body          String
+  contentType   String?
+  lastCheckedAt DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // Server-only singleton for the enhanced Judge fallback. API keys remain in

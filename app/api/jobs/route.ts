@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
   const jobs = await prisma.job.findMany({
     where: {
       isEntryLevel: true,
+      ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
       ...jobAvailabilityWhere(availability),
       ...(country ? { country } : { country: { in: ["US", "CA"] } }),
     },

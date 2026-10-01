@@ -12,7 +12,7 @@ describe("discovery scope copy", () => {
     });
 
     expect(copy.summary).toBe(
-      "Open roles matching Software Engineer in United States and Canada. Required experience is capped at 2 years. Roles that require an advanced degree are excluded. Internships and co-ops are excluded.",
+      "Open internships matching Software Engineer in United States and Canada. Required experience is capped at 2 years. Roles that require an advanced degree are excluded. Only internships and co-ops are kept.",
     );
   });
 
@@ -24,6 +24,7 @@ describe("discovery scope copy", () => {
         maxYoE: 1,
         excludeAdvancedDegree: false,
         includeInternships: true,
+        internshipsOnly: false,
         queryTerms: ["data scientist"],
         roleKeywords: ["security"],
       },
@@ -48,6 +49,8 @@ describe("discovery scope copy", () => {
         ...DEFAULT_DISCOVERY_CONFIG,
         countries: ["OTHER", "unknown"],
         maxYoE: 0,
+        includeInternships: false,
+        internshipsOnly: false,
         queryTerms: ["any"],
         roleKeywords: [],
       },
@@ -81,7 +84,7 @@ describe("discovery scope copy", () => {
       withoutOperationalCountries.geographyNeutralSummary,
     );
     expect(withExtraCountry.geographyNeutralSummary).toBe(
-      "Open roles matching Software Engineer. Required experience is capped at 2 years. Roles that require an advanced degree are excluded. Internships and co-ops are excluded.",
+      "Open internships matching Software Engineer. Required experience is capped at 2 years. Roles that require an advanced degree are excluded. Only internships and co-ops are kept.",
     );
     expect(withExtraCountry.geographyNeutralSummary).not.toMatch(
       /United States|Canada|United Kingdom/,

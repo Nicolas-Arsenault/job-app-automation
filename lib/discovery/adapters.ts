@@ -8,9 +8,14 @@
 // are handled by lib/discovery/browser.ts (Playwright).
 
 import { classifyCountry, isSoftwareRole, type Country } from "./entryLevel";
+import { createHash } from "node:crypto";
 import type { ApiCompany, DiscoverySystem, BrowserSystem } from "./companies";
 import { prisma } from "../db";
-import { DEFAULT_YC_CONFIG, type YcConfig } from "./config";
+import {
+  DEFAULT_YC_CONFIG,
+  type WatchedCompany,
+  type YcConfig,
+} from "./config";
 import {
   YC_DIRECTORY_URL,
   selectYcCompanies,
@@ -138,6 +143,66 @@ async function fetchText(url: string, timeoutMs = 8000): Promise<string> {
     return await res.text();
   } finally {
     clearTimeout(t);
+  }
+}
+
+async function fetchConditionallyCachedText(
+  key: string,
+  url: string,
+  timeoutMs = 30000,
+): Promise<string> {
+  const cached = await prisma.discoveryHttpCache.findUnique({ where: { key } });
+  const headers: Record<string, string> = {
+    "User-Agent": UA,
+    Accept: "application/json,text/plain,*/*",
+  };
+  if (cached?.etag) headers["If-None-Match"] = cached.etag;
+  if (cached?.lastModified) headers["If-Modified-Since"] = cached.lastModified;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    let response = await fetch(url, { headers, redirect: "follow", signal: ctrl.signal });
+    if (response.status === 304 && cached) {
+      await prisma.discoveryHttpCache.update({
+        where: { key },
+        data: { lastCheckedAt: new Date() },
+      });
+      return cached.body;
+    }
+    // A validator without its cached body is unusable. Retry once without it.
+    if (response.status === 304) {
+      response = await fetch(url, {
+        headers: { "User-Agent": UA, Accept: headers.Accept },
+        redirect: "follow",
+        signal: ctrl.signal,
+      });
+    }
+    if (!response.ok) {
+      throw new FetchHttpError(response.status, response.headers.get("retry-after"));
+    }
+    const body = await response.text();
+    await prisma.discoveryHttpCache.upsert({
+      where: { key },
+      create: {
+        key,
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+        contentType: response.headers.get("content-type"),
+        body,
+        lastCheckedAt: new Date(),
+      },
+      update: {
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+        contentType: response.headers.get("content-type"),
+        body,
+        lastCheckedAt: new Date(),
+      },
+    });
+    return body;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1098,6 +1163,129 @@ async function talentbrew(c: ApiCompany): Promise<DiscoveryPosting[]> {
   return out;
 }
 
+// ------------------------------ SmartRecruiters ------------------------------
+// Public company-scoped Posting API. We request only configured countries, then
+// hydrate software-looking rows from the detail endpoint so the internship and
+// degree classifiers see the complete posting text.
+
+interface SmartRecruitersListRow {
+  id?: string;
+  name?: string;
+  releasedDate?: string;
+  location?: { fullLocation?: string; city?: string; region?: string; country?: string };
+  experienceLevel?: { id?: string; label?: string };
+  typeOfEmployment?: { id?: string; label?: string };
+}
+
+async function smartrecruiters(
+  c: ApiCompany,
+  ctx: FetchContext = {},
+): Promise<DiscoveryPosting[]> {
+  const companyIdentifier = c.token ?? "";
+  if (!companyIdentifier) throw new Error("SmartRecruiters company identifier is missing");
+  const countries = (ctx.countries?.length ? ctx.countries : ["US", "CA"])
+    .map((country) => country.toLowerCase());
+  const rows = new Map<string, SmartRecruitersListRow>();
+
+  for (const country of countries) {
+    let offset = 0;
+    for (let page = 0; page < 60; page++) {
+      const url =
+        `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyIdentifier)}/postings` +
+        `?destination=PUBLIC&country=${encodeURIComponent(country)}` +
+        `${ctx.internshipsOnly ? "&q=intern" : ""}&limit=100&offset=${offset}`;
+      const data = (await fetchJson(url, undefined, 30000)) as {
+        totalFound?: number;
+        content?: SmartRecruitersListRow[];
+      };
+      if (!Array.isArray(data.content)) {
+        throw new Error("SmartRecruiters response did not contain a content array");
+      }
+      for (const row of data.content) {
+        if (isNonEmptyString(row.id) && isNonEmptyString(row.name)) rows.set(row.id, row);
+      }
+      offset += data.content.length;
+      if (!data.content.length || offset >= Number(data.totalFound ?? offset)) break;
+    }
+  }
+
+  const candidates = [...rows.values()].filter((row) =>
+    isSoftwareRole(row.name ?? ""),
+  );
+  return (
+    await mapPool(candidates, 8, async (row): Promise<DiscoveryPosting | null> => {
+      const id = row.id ?? "";
+      try {
+        const detail = (await fetchJson(
+          `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyIdentifier)}/postings/${encodeURIComponent(id)}`,
+          undefined,
+          30000,
+        )) as {
+          name?: string;
+          releasedDate?: string;
+          postingUrl?: string;
+          applyUrl?: string;
+          location?: SmartRecruitersListRow["location"];
+          experienceLevel?: SmartRecruitersListRow["experienceLevel"];
+          typeOfEmployment?: SmartRecruitersListRow["typeOfEmployment"];
+          jobAd?: { sections?: Record<string, { title?: string; text?: string }> };
+          compensation?: { min?: number; max?: number; currency?: string; period?: string };
+        };
+        const locationData = detail.location ?? row.location;
+        const location =
+          locationData?.fullLocation ??
+          [locationData?.city, locationData?.region, locationData?.country]
+            .filter(Boolean)
+            .join(", ");
+        const sections = Object.values(detail.jobAd?.sections ?? {})
+          .map((section) => `${section.title ?? ""}\n${stripHtml(section.text)}`.trim())
+          .filter(Boolean);
+        const experience = detail.experienceLevel ?? row.experienceLevel;
+        const employment = detail.typeOfEmployment ?? row.typeOfEmployment;
+        const description = [
+          experience?.label || experience?.id
+            ? `Experience level: ${experience.label ?? experience.id}.`
+            : "",
+          employment?.label || employment?.id
+            ? `Employment type: ${employment.label ?? employment.id}.`
+            : "",
+          ...sections,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        const compensation = detail.compensation
+          ? [
+              detail.compensation.min,
+              detail.compensation.max,
+              detail.compensation.currency,
+              detail.compensation.period,
+            ]
+              .filter((value) => value != null)
+              .join(" ")
+          : null;
+        const applyUrl = detail.applyUrl ?? detail.postingUrl;
+        if (!isHttpUrl(applyUrl)) return null;
+        return mk("smartrecruiters", c.name, {
+          title: detail.name ?? row.name ?? "",
+          location,
+          applyUrl,
+          externalId: id,
+          description,
+          postedAt: toDate(detail.releasedDate ?? row.releasedDate),
+          compensation,
+        });
+      } catch (error) {
+        ctx.onWarning?.(
+          `SmartRecruiters detail ${c.name}/${id} failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return null;
+      }
+    })
+  ).filter((posting): posting is DiscoveryPosting => posting !== null);
+}
+
 // --------------------------------- GitHub board ---------------------------------
 // Community-maintained new-grad aggregators publish either listings.json or a
 // Markdown jobs table. Each row is a real posting at a real employer, so the
@@ -1194,10 +1382,14 @@ function githubMarkdownBoard(c: ApiCompany, markdown: string): DiscoveryPosting[
 async function githubBoard(c: ApiCompany): Promise<DiscoveryPosting[]> {
   const b = c.board!;
   const url = `https://raw.githubusercontent.com/${b.owner}/${b.repo}/${b.ref}/${b.path}`;
+  const body = await fetchConditionallyCachedText(
+    `githubboard:${b.owner}/${b.repo}/${b.ref}/${b.path}`,
+    url,
+  );
   if (b.format === "markdown") {
-    return githubMarkdownBoard(c, await fetchText(url, 30000));
+    return githubMarkdownBoard(c, body);
   }
-  const data = (await fetchJson(url, { headers: { Accept: "application/json" } }, 30000)) as
+  const data = JSON.parse(body) as
     | BoardListing[]
     | { data?: BoardListing[]; listings?: BoardListing[] };
   const rows: BoardListing[] = Array.isArray(data) ? data : (data.listings ?? data.data ?? []);
@@ -1232,7 +1424,7 @@ async function githubBoard(c: ApiCompany): Promise<DiscoveryPosting[]> {
 }
 
 const FETCHERS: Record<
-  Exclude<DiscoverySystem, "ycombinator">,
+  Exclude<DiscoverySystem, "ycombinator" | "watchlist">,
   (c: ApiCompany, ctx?: FetchContext) => Promise<DiscoveryPosting[]>
 > = {
   greenhouse,
@@ -1240,6 +1432,7 @@ const FETCHERS: Record<
   lever,
   workable,
   teamtailor,
+  smartrecruiters,
   amazon,
   uber,
   netflix,
@@ -1257,7 +1450,60 @@ const FETCHERS: Record<
 export interface FetchContext {
   yc?: YcConfig;
   countries?: string[];
+  internshipsOnly?: boolean;
+  watchedCompanies?: WatchedCompany[];
   onWarning?: (message: string) => void;
+}
+
+// ------------------------------- Company watchlist -------------------------------
+
+async function watchlist(c: ApiCompany, ctx: FetchContext): Promise<DiscoveryPosting[]> {
+  const companies = (ctx.watchedCompanies ?? []).map((company) => ({
+    name: company.name,
+    slug: `watch-${createHash("sha1").update(`${company.name}|${company.website}`).digest("hex").slice(0, 20)}`,
+    website: company.website,
+    batch: null,
+    status: "Active",
+    team_size: null,
+    isHiring: true,
+    regions: null,
+    all_locations: "Remote",
+  } satisfies YcDirectoryCompany));
+  if (!companies.length) return [];
+
+  const boards = await resolveYcBoards(companies, {
+    prisma,
+    fetchText: (url) => fetchText(url, 8000),
+    concurrency: Math.min(8, Math.max(1, companies.length)),
+    onProbeFailure: (company, error) =>
+      ctx.onWarning?.(
+        `Watchlist ATS discovery unavailable for ${company.name}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      ),
+  });
+
+  const perBoard = await mapPool(boards, 8, async (board) => {
+    const synthetic: ApiCompany = {
+      name: board.name,
+      method: "api",
+      system: board.system,
+      token: board.token,
+      countryFilter: "post",
+      queryTerms: c.queryTerms,
+    };
+    try {
+      return await FETCHERS[board.system](synthetic, ctx);
+    } catch (error) {
+      ctx.onWarning?.(
+        `Watchlist board ${board.name} (${board.system}) failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    }
+  });
+  return perBoard.flat();
 }
 
 // --------------------------------- Y Combinator ---------------------------------
@@ -1338,6 +1584,7 @@ export async function fetchCompanyPostings(
   ctx: FetchContext = {},
 ): Promise<DiscoveryPosting[]> {
   if (c.system === "ycombinator") return ycombinator(c, ctx);
+  if (c.system === "watchlist") return watchlist(c, ctx);
   const fetcher = FETCHERS[c.system];
   if (!fetcher) throw new Error(`no discovery fetcher for system ${c.system}`);
   return fetcher(c, ctx);

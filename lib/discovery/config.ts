@@ -23,6 +23,8 @@ export interface DiscoveryConfigData {
   excludeAdvancedDegree: boolean;
   /** Keep internship / co-op postings (off = new-grad / full-time only). */
   includeInternships: boolean;
+  /** Reject every non-internship role during ingest. */
+  internshipsOnly: boolean;
   /**
    * Extra role keywords that broaden what counts as "in scope" (added on top of
    * the built-in software vocabulary). e.g. ["security", "data scientist"].
@@ -38,6 +40,13 @@ export interface DiscoveryConfigData {
   goldenJobs: GoldenJobConfig;
   /** Y Combinator directory-expansion source settings (see lib/discovery/yc.ts). */
   yc: YcConfig;
+  /** Extra companies resolved from their public website into a direct ATS board. */
+  watchedCompanies: WatchedCompany[];
+}
+
+export interface WatchedCompany {
+  name: string;
+  website: string;
 }
 
 /** Knobs for the Y Combinator expansion source. All defaults are sane; the whole
@@ -68,13 +77,15 @@ export const DEFAULT_DISCOVERY_CONFIG: DiscoveryConfigData = {
   countries: ["US", "CA"],
   maxYoE: 2,
   excludeAdvancedDegree: true,
-  includeInternships: false,
+  includeInternships: true,
+  internshipsOnly: true,
   roleKeywords: [],
   excludeTitleKeywords: [],
   queryTerms: [],
   disabledSources: [],
   goldenJobs: DEFAULT_GOLDEN_JOB_CONFIG,
   yc: DEFAULT_YC_CONFIG,
+  watchedCompanies: [],
 };
 
 export function normalizeDiscoveryConfig(
@@ -105,17 +116,36 @@ export function normalizeDiscoveryConfig(
       concurrency: Math.max(1, ycNum(o.concurrency, d.concurrency, 32)),
     };
   };
+  const watchedCompanies = (value: unknown): WatchedCompany[] => {
+    if (!Array.isArray(value)) return d.watchedCompanies;
+    const seen = new Set<string>();
+    const out: WatchedCompany[] = [];
+    for (const item of value) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const raw = item as Partial<WatchedCompany>;
+      const name = String(raw.name ?? "").trim();
+      const website = String(raw.website ?? "").trim();
+      if (!name || !/^https?:\/\//i.test(website)) continue;
+      const key = `${name.toLowerCase()}|${website.toLowerCase().replace(/\/+$/, "")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name, website: website.replace(/\/+$/, "") });
+    }
+    return out.slice(0, 500);
+  };
   return {
     countries: arr(r.countries, d.countries).map((c) => c.toUpperCase()),
     maxYoE: num(r.maxYoE, d.maxYoE),
     excludeAdvancedDegree: bool(r.excludeAdvancedDegree, d.excludeAdvancedDegree),
     includeInternships: bool(r.includeInternships, d.includeInternships),
+    internshipsOnly: bool(r.internshipsOnly, d.internshipsOnly),
     roleKeywords: arr(r.roleKeywords, d.roleKeywords),
     excludeTitleKeywords: arr(r.excludeTitleKeywords, d.excludeTitleKeywords),
     queryTerms: arr(r.queryTerms, d.queryTerms),
     disabledSources: arr(r.disabledSources, d.disabledSources),
     goldenJobs: normalizeGoldenJobConfig(r.goldenJobs, d.goldenJobs),
     yc: yc(r.yc),
+    watchedCompanies: watchedCompanies(r.watchedCompanies),
   };
 }
 
@@ -140,6 +170,7 @@ export async function saveDiscoveryConfig(
     ...data,
     goldenJobs: { ...current.goldenJobs, ...data.goldenJobs },
     yc: { ...current.yc, ...data.yc },
+    watchedCompanies: data.watchedCompanies ?? current.watchedCompanies,
   });
   await prisma.discoveryConfig.upsert({
     where: { id: "default" },
@@ -153,7 +184,8 @@ export async function saveDiscoveryConfig(
 export function toEntryLevelOptions(config: DiscoveryConfigData): EntryLevelOptions {
   return {
     maxYoE: config.maxYoE,
-    includeInternships: config.includeInternships,
+    includeInternships: config.includeInternships || config.internshipsOnly,
+    internshipsOnly: config.internshipsOnly,
     excludeAdvancedDegree: config.excludeAdvancedDegree,
     extraRoleKeywords: config.roleKeywords,
     extraExcludeKeywords: config.excludeTitleKeywords,

@@ -339,6 +339,8 @@ export interface EntryLevelInput {
 export interface EntryLevelOptions {
   maxYoE?: number;
   includeInternships?: boolean;
+  /** Keep only internship/co-op postings. Takes precedence over includeInternships. */
+  internshipsOnly?: boolean;
   excludeAdvancedDegree?: boolean;
   extraRoleKeywords?: string[];
   extraExcludeKeywords?: string[];
@@ -348,6 +350,7 @@ function resolveOptions(opts?: EntryLevelOptions) {
   return {
     maxYoE: opts?.maxYoE ?? MAX_YEARS_EXPERIENCE,
     includeInternships: opts?.includeInternships ?? false,
+    internshipsOnly: opts?.internshipsOnly ?? false,
     excludeAdvancedDegree: opts?.excludeAdvancedDegree ?? true,
     extraRoleKeywords: opts?.extraRoleKeywords ?? [],
     extraExcludeKeywords: opts?.extraExcludeKeywords ?? [],
@@ -402,6 +405,7 @@ export function classifyEntryLevel(
 
   const reasons: string[] = [];
   if (!isSoftware) reasons.push("not a software role");
+  if (o.internshipsOnly && !isInternship) reasons.push("not an internship / co-op");
   if (isInternship && !o.includeInternships) reasons.push("internship / co-op");
   if (blockedBySeniority) reasons.push("senior/mid level");
   if (blockAdvanced) reasons.push("advanced degree required");
@@ -410,6 +414,7 @@ export function classifyEntryLevel(
   const isEntryLevel =
     isSoftware &&
     !blockAdvanced &&
+    (!o.internshipsOnly || isInternship) &&
     (o.includeInternships || !isInternship) &&
     (hasEntrySignal || (!blockedBySeniority && !hasHighYoE));
 

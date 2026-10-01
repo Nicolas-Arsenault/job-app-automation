@@ -11,6 +11,7 @@ import { CompanyLogo } from "./components/CompanyLogo";
 import { ScanButton } from "./components/ScanButton";
 import { ACTIVE_JOB_WHERE } from "@/lib/jobs/availability";
 import { getDiscoveryScopeCopy } from "@/lib/discovery/scope";
+import { getDiscoveryConfig } from "@/lib/discovery/config";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,12 @@ function timeAgo(d: Date | null): string {
 }
 
 export default async function OverviewPage() {
-  const entryWhere = { isEntryLevel: true, ...ACTIVE_JOB_WHERE } as const;
+  const discoveryConfig = await getDiscoveryConfig();
+  const entryWhere = {
+    isEntryLevel: true,
+    ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
+    ...ACTIVE_JOB_WHERE,
+  } as const;
   const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany] = await Promise.all([
     getDiscoveryScopeCopy(),
     prisma.job.count({ where: { ...entryWhere, country: "US" } }),
