@@ -4,11 +4,12 @@ import { runDiscoveryRefresh } from "../lib/discovery/refresh";
 
 loadEnvConfig(process.cwd());
 
-// Scheduled scanner. Runs the same discovery pipeline as the dashboard every
-// 20 minutes by default, bypassing only the manual-button cooldown.
+// Scheduled scanner. Runs the same discovery pipeline as the dashboard once
+// per hour by default, offset from the top of the hour to avoid synchronized
+// crawler traffic. It bypasses only the manual-button cooldown.
 // Never submits anything — discovery + scoring only. Submission stays behind
 // the human approval gate in the dashboard.
-const schedule = process.env.SCAN_CRON || "*/20 * * * *";
+const schedule = process.env.SCAN_CRON || "17 * * * *";
 let scanRunning = false;
 
 if (!cron.validate(schedule)) {
@@ -47,7 +48,8 @@ async function scanOnce(reason: string) {
 console.log(`Cron scanner armed: "${schedule}". Press Ctrl+C to stop.`);
 cron.schedule(schedule, () => void scanOnce("cron"));
 
-// Kick off an immediate scan on startup unless SCAN_ON_START=0.
-if (process.env.SCAN_ON_START !== "0") {
+// Startup scans are opt-in: frequent process restarts must not create request
+// bursts between scheduled cycles.
+if (process.env.SCAN_ON_START === "1") {
   void scanOnce("startup");
 }

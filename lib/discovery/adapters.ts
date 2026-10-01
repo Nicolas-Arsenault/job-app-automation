@@ -1038,7 +1038,9 @@ async function microsoft(
   let requests = 0;
 
   const fetchPage = async (url: string) => {
-    if (requests > 0) await wait(200);
+    // This undocumented careers endpoint has returned 429s at the previous
+    // five-requests-per-second pace. Keep it to at most one request per second.
+    if (requests > 0) await wait(1_000);
     requests++;
     try {
       return await fetchJson(url);
@@ -1213,7 +1215,7 @@ async function smartrecruiters(
     isSoftwareRole(row.name ?? ""),
   );
   return (
-    await mapPool(candidates, 8, async (row): Promise<DiscoveryPosting | null> => {
+    await mapPool(candidates, 2, async (row): Promise<DiscoveryPosting | null> => {
       const id = row.id ?? "";
       try {
         const detail = (await fetchJson(

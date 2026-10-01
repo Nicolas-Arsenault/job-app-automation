@@ -261,7 +261,7 @@ describe("microsoft adapter (pcsx)", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1);
       expect(fetchMock).toHaveBeenCalledTimes(2);
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       await expect(pending).resolves.toEqual([]);
       expect(fetchMock).toHaveBeenCalledTimes(3);

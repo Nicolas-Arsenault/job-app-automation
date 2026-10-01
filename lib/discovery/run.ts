@@ -531,7 +531,7 @@ export async function runDiscovery(opts?: {
 }): Promise<DiscoveryRunResult> {
   const cycleStartedAt = new Date();
   const onlyEntryLevel = opts?.onlyEntryLevel ?? true;
-  const concurrency = opts?.concurrency ?? 5;
+  const concurrency = opts?.concurrency ?? 4;
   const config = opts?.config ?? (await getDiscoveryConfig());
   const ingestOpts: IngestOptions = {
     entryOptions: toEntryLevelOptions(config),
