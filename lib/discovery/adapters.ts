@@ -272,6 +272,19 @@ const mk = (
   country: classifyCountry(p.location),
 });
 
+// Searchable career APIs need internship intent at the request layer. The
+// downstream classifier is still authoritative, but it cannot recover an
+// internship that a broad software/full-time query never returned.
+const INTERNSHIP_SEARCH_TERMS = ["intern", "co-op"];
+
+function searchTerms(c: ApiCompany, ctx: FetchContext): string[] {
+  return ctx.internshipsOnly ? INTERNSHIP_SEARCH_TERMS : c.queryTerms;
+}
+
+function primarySearchTerm(c: ApiCompany, ctx: FetchContext): string {
+  return searchTerms(c, ctx)[0] ?? c.queryTerms[0] ?? "";
+}
+
 // --------------------------------- Greenhouse ---------------------------------
 
 async function greenhouse(c: ApiCompany): Promise<DiscoveryPosting[]> {
@@ -569,38 +582,43 @@ async function teamtailor(c: ApiCompany): Promise<DiscoveryPosting[]> {
 
 // ----------------------------------- Amazon -----------------------------------
 
-async function amazon(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function amazon(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const out: DiscoveryPosting[] = [];
-  const q = c.queryTerms[0];
-  for (const country of ["USA", "CAN"] as const) {
-    for (let offset = 0; offset < 300; offset += 100) {
-      const url =
-        `https://www.amazon.jobs/en/search.json?base_query=${encodeURIComponent(q)}` +
-        `&normalized_country_code[]=${country}&result_limit=100&offset=${offset}`;
-      const data = (await fetchJson(url)) as {
-        jobs?: {
-          id_icims?: string;
-          title?: string;
-          normalized_location?: string;
-          job_path?: string;
-          posted_date?: string;
-          basic_qualifications?: string;
-        }[];
-      };
-      const jobs = data.jobs ?? [];
-      for (const j of jobs) {
-        out.push(
-          mk("amazon", c.name, {
-            title: j.title ?? "",
-            location: j.normalized_location ?? country,
-            applyUrl: j.job_path ? `https://www.amazon.jobs${j.job_path}` : "",
-            externalId: String(j.id_icims ?? ""),
-            description: stripHtml(j.basic_qualifications),
-            postedAt: toDate(j.posted_date),
-          }),
-        );
+  const seen = new Set<string>();
+  for (const q of searchTerms(c, ctx)) {
+    for (const country of ["USA", "CAN"] as const) {
+      for (let offset = 0; offset < 300; offset += 100) {
+        const url =
+          `https://www.amazon.jobs/en/search.json?base_query=${encodeURIComponent(q)}` +
+          `&normalized_country_code[]=${country}&result_limit=100&offset=${offset}`;
+        const data = (await fetchJson(url)) as {
+          jobs?: {
+            id_icims?: string;
+            title?: string;
+            normalized_location?: string;
+            job_path?: string;
+            posted_date?: string;
+            basic_qualifications?: string;
+          }[];
+        };
+        const jobs = data.jobs ?? [];
+        for (const j of jobs) {
+          const key = String(j.id_icims ?? j.job_path ?? "");
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          out.push(
+            mk("amazon", c.name, {
+              title: j.title ?? "",
+              location: j.normalized_location ?? country,
+              applyUrl: j.job_path ? `https://www.amazon.jobs${j.job_path}` : "",
+              externalId: String(j.id_icims ?? ""),
+              description: stripHtml(j.basic_qualifications),
+              postedAt: toDate(j.posted_date),
+            }),
+          );
+        }
+        if (jobs.length < 100) break;
       }
-      if (jobs.length < 100) break;
     }
   }
   return out;
@@ -626,7 +644,7 @@ async function netflix(
 
   const rows: NetflixJobWithCountry[] = [];
   const seen = new Set<string>();
-  const q = c.queryTerms[0];
+  const q = primarySearchTerm(c, ctx);
   for (const [locationFilter, nativeCountry] of [
     ["United States", "US"],
     ["Canada", "CA"],
@@ -709,8 +727,8 @@ async function netflix(
 
 // ------------------------------------ Snap ------------------------------------
 
-async function snap(c: ApiCompany): Promise<DiscoveryPosting[]> {
-  const q = c.queryTerms[0];
+async function snap(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
+  const q = primarySearchTerm(c, ctx);
   const data = (await fetchJson(
     `https://careers.snap.com/api/jobs?keywords=${encodeURIComponent(q)}&limit=400`,
   )) as {
@@ -739,8 +757,8 @@ async function snap(c: ApiCompany): Promise<DiscoveryPosting[]> {
 
 // --------------------------- Jibe-style careers API ---------------------------
 
-async function phenom(c: ApiCompany): Promise<DiscoveryPosting[]> {
-  const q = c.queryTerms[0];
+async function phenom(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
+  const q = primarySearchTerm(c, ctx);
   const limit = 100;
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
@@ -817,7 +835,7 @@ async function eightfold(
   };
   const rows = new Map<string, EightfoldRow>();
 
-  for (const term of c.queryTerms) {
+  for (const term of searchTerms(c, ctx)) {
     for (let start = 0; start < 500; start += 10) {
       const url =
         `https://${config.host}/api/pcsx/search?domain=${encodeURIComponent(config.domain)}` +
@@ -909,7 +927,7 @@ async function oracle(
   };
   const rows = new Map<string, OracleRow>();
 
-  for (const term of c.queryTerms) {
+  for (const term of searchTerms(c, ctx)) {
     for (let offset = 0; offset < 500; offset += 100) {
       const finder =
         `siteNumber=${config.site},limit=100,offset=${offset},` +
@@ -1020,12 +1038,21 @@ async function workday(
   };
 
   const rows = new Map<string, WorkdayListRow>();
-  for (const searchText of w.searchTerms ?? [c.queryTerms[0]]) {
+  const configuredSearches = w.searchTerms ?? c.queryTerms;
+  const searches = ctx.internshipsOnly && !w.appliedFacets
+    ? INTERNSHIP_SEARCH_TERMS
+    : configuredSearches;
+  for (const searchText of searches) {
     for (let offset = 0; offset < 100; offset += 20) {
       const data = (await fetchJson(`https://${w.host}/wday/cxs/${w.tenant}/${w.site}/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appliedFacets: {}, limit: 20, offset, searchText }),
+        body: JSON.stringify({
+          appliedFacets: w.appliedFacets ?? {},
+          limit: 20,
+          offset,
+          searchText,
+        }),
       })) as { jobPostings?: WorkdayListRow[] };
       const jobs = data.jobPostings ?? [];
       for (const j of jobs) {
@@ -1036,7 +1063,7 @@ async function workday(
     }
   }
 
-  return mapPool([...rows.values()], 5, async (j) => {
+  return mapPool([...rows.values()], w.detailConcurrency ?? 5, async (j) => {
     const title = j.title ?? "";
     const location = j.locationsText ?? "";
     const generatedUrl = j.externalPath
@@ -1111,10 +1138,10 @@ async function workday(
 // date or description in the listing; country is classified from the joined
 // office locations. Apply URL: lifeatspotify.com/jobs/<id>.
 
-async function spotify(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function spotify(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
-  for (const term of c.queryTerms) {
+  for (const term of searchTerms(c, ctx)) {
     const data = (await fetchJson(
       `https://api.lifeatspotify.com/wp-json/animal/v1/job/search?query=${encodeURIComponent(term)}`,
     )) as {
@@ -1236,9 +1263,9 @@ async function microsoft(
 // id, and build the apply URL from its /job/... path. Paginated via CurrentPage;
 // the seen-set + per-page "added" guard stops us if pagination ever loops.
 
-async function talentbrew(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function talentbrew(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const host = c.talentbrew!.host;
-  const q = c.queryTerms[0];
+  const q = primarySearchTerm(c, ctx);
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
   for (let page = 1; page <= 12; page++) {
@@ -1409,7 +1436,7 @@ async function smartrecruiters(
 }
 
 // --------------------------------- GitHub board ---------------------------------
-// Community-maintained new-grad aggregators publish either listings.json or a
+// Community-maintained internship aggregators publish either listings.json or a
 // Markdown jobs table. Each row is a real posting at a real employer, so the
 // posting's company comes from the row rather than the board name.
 

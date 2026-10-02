@@ -21,7 +21,7 @@ export interface DiscoveryConfigData {
   maxYoE: number;
   /** Drop roles that clearly REQUIRE a Master's/PhD. */
   excludeAdvancedDegree: boolean;
-  /** Keep internship / co-op postings (off = new-grad / full-time only). */
+  /** Keep internship / co-op postings (off = full-time roles only). */
   includeInternships: boolean;
   /** Reject every non-internship role during ingest. */
   internshipsOnly: boolean;

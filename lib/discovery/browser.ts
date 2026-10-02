@@ -255,7 +255,7 @@ const RULES: Partial<Record<BrowserSystem, SiteRule>> = {
         }));
     },
     shouldHydrate: ({ title }) =>
-      !/\b(senior|staff|managers?|lead|director|head|principal|internships?|co-op)\b/i.test(title),
+      isSoftwareRole(title) && /\b(?:intern(?:ship)?|co-?op)\b/i.test(title),
     hydrate: async (page, card) => {
       await page.goto(card.href, { waitUntil: "domcontentloaded", timeout: 45000 });
       const posting = page

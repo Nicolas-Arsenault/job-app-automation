@@ -96,7 +96,7 @@ describe("Canada-first ATS adapters", () => {
     vi.stubGlobal("fetch", fetchMock);
     const company = API_COMPANIES.find((candidate) => candidate.name === "Genetec")!;
 
-    const posts = await fetchCompanyPostings(company);
+    const posts = await fetchCompanyPostings(company, { internshipsOnly: true });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://apply.workable.com/api/v1/widget/accounts/genetec-inc",
@@ -312,9 +312,15 @@ describe("netflix careers adapter", () => {
       (candidate) => candidate.name === "Netflix",
     )!;
 
-    const posts = await fetchCompanyPostings(company);
+    const posts = await fetchCompanyPostings(company, { internshipsOnly: true });
 
     expect(posts).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const url = new URL(String(input));
+        return url.pathname.endsWith("/jobs") && url.searchParams.get("query") === "intern";
+      }),
+    ).toBe(true);
     expect(
       fetchMock.mock.calls.some(([input]) => {
         const url = new URL(String(input));
@@ -1058,6 +1064,35 @@ describe("Oracle Recruiting adapter", () => {
 });
 
 describe("Workday adapter details", () => {
+  it("uses internship searches globally and Cisco's native intern facet", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return jsonResponse({ jobPostings: [] });
+      }),
+    );
+
+    const nvidia = API_COMPANIES.find((candidate) => candidate.name === "NVIDIA")!;
+    await fetchCompanyPostings(nvidia, { internshipsOnly: true });
+    expect(bodies.map((body) => body.searchText)).toEqual(["intern", "co-op"]);
+    expect(bodies.every((body) => JSON.stringify(body.appliedFacets) === "{}")).toBe(true);
+
+    bodies.length = 0;
+    const cisco = API_COMPANIES.find((candidate) => candidate.name === "Cisco")!;
+    await fetchCompanyPostings(cisco, { internshipsOnly: true });
+    expect(bodies).toEqual([
+      expect.objectContaining({
+        searchText: "",
+        appliedFacets: {
+          workerSubType: ["a5e1942e7b2c01c6907030106001b700"],
+        },
+      }),
+    ]);
+    expect(JSON.stringify(cisco)).not.toMatch(/new.?grad/i);
+  });
+
   it("loads official descriptions for relevant configured roles", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);

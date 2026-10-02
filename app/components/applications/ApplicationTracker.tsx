@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { CompanyLogo } from "../CompanyLogo";
 import { AppliedBadge, cls } from "../ui";
 import type { ApplicationStatus } from "../jobs/types";
@@ -33,6 +33,12 @@ const STAGES: { value: TrackedApplicationStatus; label: string }[] = [
 
 type StageFilter = "all" | TrackedApplicationStatus;
 
+function todayForInput(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
 function formatDate(value: string | null): string {
   if (!value) return "Date unavailable";
   return new Intl.DateTimeFormat(undefined, {
@@ -51,6 +57,17 @@ export function ApplicationTracker({
   const [filter, setFilter] = useState<StageFilter>("all");
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [manualApplication, setManualApplication] = useState({
+    title: "",
+    company: "",
+    applyUrl: "",
+    location: "",
+    country: "" as "" | "US" | "CA" | "OTHER",
+    applicationStatus: "applied" as TrackedApplicationStatus,
+    appliedDate: todayForInput(),
+  });
 
   const counts = useMemo(() => {
     const result: Record<TrackedApplicationStatus, number> = {
@@ -112,8 +129,149 @@ export function ApplicationTracker({
     }
   }
 
+  async function addApplication(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAdding(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...manualApplication,
+          country: manualApplication.country || undefined,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { application?: TrackedApplication; error?: string }
+        | null;
+      if (!response.ok || !payload?.application) {
+        throw new Error(payload?.error || `Add failed (${response.status})`);
+      }
+      setApplications((current) => [
+        payload.application!,
+        ...current.filter((item) => item.id !== payload.application!.id),
+      ]);
+      setFilter("all");
+      setShowAddForm(false);
+      setManualApplication({
+        title: "",
+        company: "",
+        applyUrl: "",
+        location: "",
+        country: "",
+        applicationStatus: "applied",
+        appliedDate: todayForInput(),
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAdding(false);
+    }
+  }
+
   return (
     <>
+      <div className="mb-5 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowAddForm((shown) => !shown)}
+          className={cls.btnPrimary}
+        >
+          {showAddForm ? "Cancel" : "+ Add application"}
+        </button>
+      </div>
+
+      {showAddForm && (
+        <form onSubmit={addApplication} className={`${cls.card} mb-5`}>
+          <h2 className="text-lg font-semibold">Add an application</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            If this job is already in discovery, it will be marked applied instead of duplicated.
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium">
+              Company
+              <input
+                required
+                maxLength={160}
+                value={manualApplication.company}
+                onChange={(event) => setManualApplication((current) => ({ ...current, company: event.target.value }))}
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Role title
+              <input
+                required
+                maxLength={200}
+                value={manualApplication.title}
+                onChange={(event) => setManualApplication((current) => ({ ...current, title: event.target.value }))}
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium md:col-span-2">
+              Job posting URL
+              <input
+                required
+                type="url"
+                value={manualApplication.applyUrl}
+                onChange={(event) => setManualApplication((current) => ({ ...current, applyUrl: event.target.value }))}
+                placeholder="https://company.com/jobs/..."
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Location <span className="font-normal text-gray-500">(optional)</span>
+              <input
+                maxLength={200}
+                value={manualApplication.location}
+                onChange={(event) => setManualApplication((current) => ({ ...current, location: event.target.value }))}
+                placeholder="Toronto, Ontario"
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Country
+              <select
+                value={manualApplication.country}
+                onChange={(event) => setManualApplication((current) => ({ ...current, country: event.target.value as typeof current.country }))}
+                className={`${cls.input} mt-1 w-full`}
+              >
+                <option value="">Detect from location</option>
+                <option value="CA">Canada</option>
+                <option value="US">United States</option>
+                <option value="OTHER">Other / unknown</option>
+              </select>
+            </label>
+            <label className="text-sm font-medium">
+              Applied date
+              <input
+                required
+                type="date"
+                value={manualApplication.appliedDate}
+                onChange={(event) => setManualApplication((current) => ({ ...current, appliedDate: event.target.value }))}
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Stage
+              <select
+                value={manualApplication.applicationStatus}
+                onChange={(event) => setManualApplication((current) => ({ ...current, applicationStatus: event.target.value as TrackedApplicationStatus }))}
+                className={`${cls.input} mt-1 w-full`}
+              >
+                {STAGES.map((stage) => (
+                  <option key={stage.value} value={stage.value}>{stage.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button type="submit" disabled={adding} className={`${cls.btnPrimary} mt-4 disabled:opacity-60`}>
+            {adding ? "Adding…" : "Add application"}
+          </button>
+        </form>
+      )}
+
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <button
           type="button"
@@ -152,7 +310,7 @@ export function ApplicationTracker({
         <div className={`${cls.card} text-center`}>
           <p className="font-medium">No applications in this stage.</p>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Mark a role as applied from the Jobs page and it will appear here.
+            Mark a role as applied from Jobs, or add an application yourself.
           </p>
           <Link href="/jobs" className="mt-4 inline-block text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-300">
             Browse jobs

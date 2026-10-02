@@ -4,7 +4,7 @@
 //
 // The user asked to target ~42 specific big-tech / well-known / VC-backed
 // companies and find, for EACH, the exact web query that lists their currently
-// open entry-level software roles in the US and in Canada (kept separate).
+// open software internships in the US and in Canada (kept separate).
 //
 // Every entry below was probed LIVE (see scripts/verify-queries.ts,
 // `npm run discovery:verify`). Companies fall into two buckets:
@@ -22,9 +22,9 @@
 //                        filtered where the site supports it) so the query is
 //                        pinned and confirmable.
 //
-// `queryTerms` are the software keywords we search each board with; the
-// entry-level / bachelor's / no-YoE narrowing is applied afterwards by
-// classifyEntryLevel() so the logic stays in one place.
+// `queryTerms` are the software fallback when internship-only mode is disabled.
+// In internship-only mode, searchable adapters use intern/co-op intent; ATSes
+// that expose a full board are fetched whole and filtered by classifyEntryLevel().
 
 export type DiscoveryMethod = "api";
 export type DiscoverySystem =
@@ -81,8 +81,12 @@ export interface ApiCompany {
     site: string;
     /** Optional targeted searches used instead of queryTerms[0]. */
     searchTerms?: string[];
+    /** Native Workday facet ids, used when a board exposes an internship facet. */
+    appliedFacets?: Record<string, string[]>;
     /** Fetch each relevant job detail so experience requirements are available. */
     fetchDescriptions?: boolean;
+    /** Keep detail hydration gentle for large university-job result sets. */
+    detailConcurrency?: number;
   };
   // Eightfold career portal public search API.
   eightfold?: { host: string; domain: string };
@@ -216,8 +220,14 @@ export const API_COMPANIES: ApiCompany[] = [
       host: "cisco.wd5.myworkdayjobs.com",
       tenant: "cisco",
       site: "Cisco_Careers",
-      searchTerms: ["new grad"],
+      // Cisco's text search is fuzzy enough that "intern" returns hundreds of
+      // unrelated jobs. This is the board's native Intern worker-subtype facet.
+      searchTerms: [""],
+      appliedFacets: {
+        workerSubType: ["a5e1942e7b2c01c6907030106001b700"],
+      },
       fetchDescriptions: true,
+      detailConcurrency: 2,
     },
   },
   { name: "Ciena", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "ciena.wd5.myworkdayjobs.com", tenant: "ciena", site: "Careers", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
@@ -282,8 +292,8 @@ export const API_COMPANIES: ApiCompany[] = [
 export const BROWSER_COMPANIES: BrowserCompany[] = [
   {
     name: "Apple", method: "browser", system: "apple",
-    searchUrlUS: "https://jobs.apple.com/en-us/search?location=united-states-USA&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
-    searchUrlCA: "https://jobs.apple.com/en-ca/search?location=canada-CANC&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
+    searchUrlUS: "https://jobs.apple.com/en-us/search?search=intern&location=united-states-USA&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
+    searchUrlCA: "https://jobs.apple.com/en-ca/search?search=intern&location=canada-CANC&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
     reason: "role/search API requires a CSRF token + session cookie; empty on plain fetch.",
   },
   {
@@ -294,20 +304,20 @@ export const BROWSER_COMPANIES: BrowserCompany[] = [
   },
   {
     name: "Tesla", method: "browser", system: "tesla",
-    searchUrlUS: "https://www.tesla.com/careers/search/?query=software&region=5&type=3",
-    searchUrlCA: "https://www.tesla.com/careers/search/?query=software&region=4",
+    searchUrlUS: "https://www.tesla.com/careers/search/?query=software%20intern&region=5&type=3",
+    searchUrlCA: "https://www.tesla.com/careers/search/?query=software%20intern&region=4&type=3",
     reason: "cua-api is Akamai-protected (Access Denied to non-browser clients).",
   },
   {
     name: "Google", method: "browser", system: "google",
-    searchUrlUS: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20engineer&target_level=EARLY&target_level=INTERN_AND_APPRENTICE&location=United%20States",
-    searchUrlCA: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20engineer&target_level=EARLY&target_level=INTERN_AND_APPRENTICE&location=Canada",
+    searchUrlUS: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20intern&target_level=INTERN_AND_APPRENTICE&location=United%20States",
+    searchUrlCA: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20intern&target_level=INTERN_AND_APPRENTICE&location=Canada",
     reason: "public Cloud Talent API retired; results are client-rendered behind an internal endpoint.",
   },
   {
     name: "DeepMind", method: "browser", system: "deepmind",
-    searchUrlUS: "https://deepmind.google/about/careers/#/?location=United%20States&search=software%20engineer",
-    searchUrlCA: "https://deepmind.google/about/careers/#/?location=Canada&search=software%20engineer",
+    searchUrlUS: "https://deepmind.google/about/careers/#/?location=United%20States&search=intern",
+    searchUrlCA: "https://deepmind.google/about/careers/#/?location=Canada&search=intern",
     reason: "careers board is a client-rendered SPA sharing Google's non-public backend.",
   },
   {
@@ -318,14 +328,14 @@ export const BROWSER_COMPANIES: BrowserCompany[] = [
   },
   {
     name: "Meta", method: "browser", system: "meta",
-    searchUrlUS: "https://www.metacareers.com/jobs?q=software%20engineer&offices[0]=United%20States&roles[0]=Individual%20Contributor",
-    searchUrlCA: "https://www.metacareers.com/jobs?q=software%20engineer&offices[0]=Canada&roles[0]=Individual%20Contributor",
+    searchUrlUS: "https://www.metacareers.com/jobs?q=software%20intern&offices[0]=United%20States&roles[0]=Internship",
+    searchUrlCA: "https://www.metacareers.com/jobs?q=software%20intern&offices[0]=Canada&roles[0]=Internship",
     reason: "metacareers uses a fragile GraphQL backend with request signing; not a stable public API.",
   },
   {
     name: "LinkedIn", method: "browser", system: "linkedin",
-    searchUrlUS: "https://www.linkedin.com/jobs/search/?keywords=software%20engineer&f_E=1%2C2&location=United%20States&f_C=1337",
-    searchUrlCA: "https://www.linkedin.com/jobs/search/?keywords=software%20engineer&f_E=1%2C2&location=Canada&f_C=1337",
+    searchUrlUS: "https://www.linkedin.com/jobs/search/?keywords=software%20intern&f_E=1&location=United%20States&f_C=1337",
+    searchUrlCA: "https://www.linkedin.com/jobs/search/?keywords=software%20intern&f_E=1&location=Canada&f_C=1337",
     reason: "guest voyager API is rate-limited & auth-gated; needs a browser session.",
   },
   {

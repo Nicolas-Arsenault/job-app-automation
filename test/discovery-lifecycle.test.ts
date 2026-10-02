@@ -379,7 +379,8 @@ describe("discovery posting lifecycle", () => {
       reconcile: false,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Two internship query variants (intern + co-op), each split US/Canada.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(result).toMatchObject({
       outcomes: {
         complete: 0,
