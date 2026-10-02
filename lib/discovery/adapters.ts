@@ -606,88 +606,6 @@ async function amazon(c: ApiCompany): Promise<DiscoveryPosting[]> {
   return out;
 }
 
-// ------------------------------------ Uber ------------------------------------
-
-interface UberJob {
-  Id?: string;
-  Title?: string;
-  Description?: string;
-  DisplayDate?: string;
-  Locations?: {
-    City?: string;
-    Region?: string;
-    Country?: string;
-  }[];
-  Urls?: {
-    Url?: string;
-    IsDefault?: boolean;
-  }[];
-}
-
-async function uber(c: ApiCompany): Promise<DiscoveryPosting[]> {
-  const base = "https://jobs.uber.com";
-  const out: DiscoveryPosting[] = [];
-  const q = c.queryTerms[0];
-  const url = `${base}/api/jobs/search?query=${encodeURIComponent(q)}`;
-  let raw: unknown;
-  try {
-    raw = await fetchJson(url);
-  } catch (error) {
-    if (
-      !(error instanceof FetchHttpError) ||
-      (error.status !== 429 && error.status < 500)
-    ) {
-      throw error;
-    }
-    await wait(
-      Math.min(10_000, Math.max(1_000, error.retryAfterMs ?? 3_000)),
-    );
-    raw = await fetchJson(url);
-  }
-
-  const jobs =
-    raw && typeof raw === "object" && "jobs" in raw
-      ? (raw as { jobs?: unknown }).jobs
-      : undefined;
-  if (!Array.isArray(jobs)) {
-    throw new Error("Uber response did not contain a jobs array");
-  }
-  const validJobs = requireValidPostingRows(
-    "Uber",
-    jobs as UberJob[],
-    (job) => isNonEmptyString(job.Id) && isNonEmptyString(job.Title),
-  );
-  for (const job of validJobs) {
-    const location = job.Locations?.[0];
-    const locationText = [
-      location?.City,
-      location?.Region,
-      location?.Country,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    const path = job.Urls?.find((candidate) => candidate.IsDefault)?.Url;
-    const applyUrl = path && /^https?:\/\//i.test(path)
-      ? path
-      : path?.startsWith("/")
-        ? `${base}${path}`
-        : job.Id
-          ? `${base}/en/jobs/${job.Id}/`
-          : "";
-    out.push(
-      mk("uber", c.name, {
-        title: job.Title ?? "",
-        location: locationText,
-        applyUrl,
-        externalId: String(job.Id ?? ""),
-        description: stripHtml(job.Description),
-        postedAt: toDate(job.DisplayDate),
-      }),
-    );
-  }
-  return out;
-}
-
 // ---------------------------------- Netflix ----------------------------------
 
 async function netflix(
@@ -1638,7 +1556,6 @@ const FETCHERS: Record<
   teamtailor,
   smartrecruiters,
   amazon,
-  uber,
   netflix,
   snap,
   phenom,

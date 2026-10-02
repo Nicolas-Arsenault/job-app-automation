@@ -11,7 +11,7 @@
 //
 //   method: "api"     -> a public JSON endpoint we can fetch directly. Country
 //                        separation is either a native request param
-//                        (Amazon / Uber / Netflix / Workday) or done by us via
+//                        (Amazon / Netflix / Workday) or done by us via
 //                        classifyCountry() on the returned location string
 //                        (Greenhouse / Lever / Ashby / Snap / Phenom).
 //
@@ -35,7 +35,6 @@ export type DiscoverySystem =
   | "teamtailor"
   | "smartrecruiters"
   | "amazon"
-  | "uber"
   | "netflix"
   | "snap"
   | "phenom"
@@ -51,6 +50,7 @@ export type DiscoverySystem =
 
 export type BrowserSystem =
   | "apple"
+  | "uber"
   | "tesla"
   | "google"
   | "deepmind"
@@ -63,8 +63,10 @@ export type BrowserSystem =
 // (lib/discovery/browser.ts). The rest render an entire card inside one anchor,
 // ignore their own location filter, or hard-block headless clients (Akamai /
 // PerimeterX), so we surface their pinned human search URL instead of scraping
-// unreliable data. Keep this in sync with RULES in browser.ts.
-export const SCRAPABLE_BROWSER_SYSTEMS: BrowserSystem[] = ["apple", "shopify"];
+// unreliable data. Uber's JSON API is Cloudflare-blocked, but its official
+// server-rendered search works conservatively in Playwright. Keep this in sync
+// with RULES in browser.ts.
+export const SCRAPABLE_BROWSER_SYSTEMS: BrowserSystem[] = ["apple", "uber", "shopify"];
 
 export interface ApiCompany {
   name: string;
@@ -179,7 +181,6 @@ export const API_COMPANIES: ApiCompany[] = [
   // ---- Bespoke public JSON endpoints
   { name: "Amazon", method: "api", system: "amazon", countryFilter: "native", queryTerms: SWE },
   { name: "Microsoft", method: "api", system: "microsoft", countryFilter: "native", queryTerms: ["intern"] },
-  { name: "Uber", method: "api", system: "uber", countryFilter: "native", queryTerms: SWE },
   { name: "Netflix", method: "api", system: "netflix", countryFilter: "native", queryTerms: SWE },
   { name: "Snap", method: "api", system: "snap", countryFilter: "post", queryTerms: SWE },
   { name: "GitHub", method: "api", system: "phenom", token: "github.careers", countryFilter: "post", queryTerms: SWE },
@@ -274,7 +275,7 @@ export const API_COMPANIES: ApiCompany[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Browser companies (8) — no usable public JSON API, need Playwright at scrape
+// Browser companies — no usable public JSON API, need Playwright at scrape
 // time. URLs are pinned & confirmable in a browser.
 // ---------------------------------------------------------------------------
 
@@ -284,6 +285,12 @@ export const BROWSER_COMPANIES: BrowserCompany[] = [
     searchUrlUS: "https://jobs.apple.com/en-us/search?location=united-states-USA&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
     searchUrlCA: "https://jobs.apple.com/en-ca/search?location=canada-CANC&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
     reason: "role/search API requires a CSRF token + session cookie; empty on plain fetch.",
+  },
+  {
+    name: "Uber", method: "browser", system: "uber",
+    searchUrlUS: "https://jobs.uber.com/en/jobs/?search=intern&radius=100",
+    searchUrlCA: "https://jobs.uber.com/en/jobs/?search=intern&radius=100",
+    reason: "the direct jobs API is Cloudflare-blocked; Playwright reads the official, server-rendered internship search sequentially.",
   },
   {
     name: "Tesla", method: "browser", system: "tesla",

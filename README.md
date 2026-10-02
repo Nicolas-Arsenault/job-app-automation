@@ -26,13 +26,13 @@ entry-level / ≤2-years-of-experience scope.
 ## Discovery pipeline
 
 Postings are pulled directly from each company's careers backend. 95+ companies expose a
-usable public feed (Greenhouse, Ashby, Lever, SmartRecruiters, Workable, Teamtailor, Amazon, Uber, Netflix,
+usable public feed (Greenhouse, Ashby, Lever, SmartRecruiters, Workable, Teamtailor, Amazon, Netflix,
 Snap, Phenom, Spotify, Workday CXS) — including a Canada-first cohort concentrated in
 Montreal and Quebec (Genetec, Behaviour Interactive, TrackTik, AlayaCare, Hopper, Nuvei,
 Vention) and a block of quant / high-frequency trading firms (Jane
 Street, Point72, Optiver, Jump, IMC, Tower Research, Squarepoint, Qube, WorldQuant, AQR,
 DRW, HRT…) — and are fetched server-side; the rest are client-rendered or bot-gated and
-are either scraped with Playwright (Apple and Shopify) or surfaced via a pinned search URL.
+are either scraped with Playwright (Apple, Uber, and Shopify) or surfaced via a pinned search URL.
 
 ```bash
 # Fetch fresh US/CA software internships from every API company (deduped upsert)

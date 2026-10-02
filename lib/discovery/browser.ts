@@ -1,5 +1,5 @@
 import { chromium, type Browser, type Page } from "playwright";
-import type { Country } from "./entryLevel";
+import { classifyCountry, isSoftwareRole, type Country } from "./entryLevel";
 import {
   BROWSER_COMPANIES,
   SCRAPABLE_BROWSER_SYSTEMS,
@@ -94,6 +94,125 @@ const RULES: Partial<Record<BrowserSystem, SiteRule>> = {
       await link.click();
       await page.waitForTimeout(2500);
       return true;
+    },
+  },
+  uber: {
+    origin: "https://jobs.uber.com",
+    singlePage: true,
+    pages: 3,
+    extract: async (page) => {
+      // The privacy dialog can cover pagination controls. Essential-only keeps
+      // the session minimal while allowing the official result page to work.
+      const essentialOnly = page.getByRole("button", {
+        name: "Essential Only",
+        exact: true,
+      });
+      if ((await essentialOnly.count()) > 0 && await essentialOnly.isVisible()) {
+        await essentialOnly.click();
+      }
+      return page
+        .locator('#js-job-search-results [data-slot="card"]')
+        .evaluateAll((cards) =>
+          cards.flatMap((card) => {
+            const anchor = card.querySelector<HTMLAnchorElement>(
+              'a.js-view-job[href*="/en/jobs/"]',
+            );
+            const title = (anchor?.textContent ?? "").replace(/\s+/g, " ").trim();
+            const href = anchor?.getAttribute("href") ?? "";
+            const externalId = card.getAttribute("data-id") ??
+              href.match(/\/jobs\/(\d+)/)?.[1] ?? "";
+            const badges = Array.from(
+              card.querySelectorAll<HTMLElement>(
+                '[data-slot="card-description"] .rounded-full',
+              ),
+            ).map((element) =>
+              (element.textContent ?? "").replace(/\s+/g, " ").trim(),
+            );
+            const location = badges[0] ?? "";
+            return title && href && externalId
+              ? [{ title, href, externalId, postedAt: null, location }]
+              : [];
+          }),
+        )
+        .then((cards) =>
+          cards.map((card) => ({
+            ...card,
+            country: classifyCountry(card.location),
+          })),
+        );
+    },
+    next: async (page, n) => {
+      const total = Number(
+        await page
+          .locator("#js-job-search-results")
+          .getAttribute("data-results"),
+      );
+      if (!Number.isFinite(total) || n * 10 >= total) return false;
+
+      // Move through result pages one at a time with a human-scale pause. This
+      // replaces the blocked direct API and never fans requests out in parallel.
+      await page.waitForTimeout(4_000 + Math.floor(Math.random() * 2_001));
+      const nextUrl = new URL(page.url());
+      nextUrl.searchParams.set("page", String(n + 1));
+      await page.goto(nextUrl.toString(), {
+        waitUntil: "domcontentloaded",
+        timeout: 45_000,
+      });
+      await page.waitForTimeout(2_000);
+      return true;
+    },
+    shouldHydrate: ({ title }) =>
+      isSoftwareRole(title) && /\b(?:intern(?:ship)?|co-?op)\b/i.test(title),
+    hydrate: async (page, card) => {
+      // Only likely software internships receive a detail request. Requests are
+      // sequential and spaced out so one opening adds at most one gentle fetch.
+      await page.waitForTimeout(3_000 + Math.floor(Math.random() * 2_001));
+      await page.goto(card.href, {
+        waitUntil: "domcontentloaded",
+        timeout: 45_000,
+      });
+      await page.waitForTimeout(2_000);
+      const detail = await page.evaluate(() => {
+        const candidates = Array.from(
+          document.querySelectorAll<HTMLScriptElement>(
+            'script[type="application/ld+json"]',
+          ),
+        );
+        for (const script of candidates) {
+          try {
+            const parsed = JSON.parse(script.textContent ?? "null") as unknown;
+            const values = Array.isArray(parsed) ? parsed : [parsed];
+            const posting = values.find((value) => {
+              if (!value || typeof value !== "object") return false;
+              const type = (value as { "@type"?: unknown })["@type"];
+              return type === "JobPosting" ||
+                (Array.isArray(type) && type.includes("JobPosting"));
+            }) as {
+              description?: string;
+              datePosted?: string;
+            } | undefined;
+            if (posting) {
+              const holder = document.createElement("div");
+              holder.innerHTML = posting.description ?? "";
+              return {
+                description: (holder.textContent ?? "").replace(/\s+/g, " ").trim(),
+                postedAt: posting.datePosted ?? null,
+              };
+            }
+          } catch {
+            // Ignore unrelated or malformed structured-data blocks.
+          }
+        }
+        return {
+          description: document.body.innerText.replace(/\s+/g, " ").trim(),
+          postedAt: null,
+        };
+      });
+      return {
+        ...card,
+        description: detail.description.slice(0, 8_000),
+        postedAt: detail.postedAt,
+      };
     },
   },
   shopify: {
