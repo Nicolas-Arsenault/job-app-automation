@@ -1107,6 +1107,54 @@
       controls: ["choice", "select", "combobox"]
     },
     {
+      key: "hasRestrictiveCovenant",
+      label: "Non-compete or restrictive covenant",
+      group: "eligibility",
+      input: "select",
+      aliases: [
+        "subject to a non compete agreement",
+        "signed a non compete agreement",
+        "bound by a non compete agreement",
+        "non compete agreement or restrictive covenant",
+        "subject to a restrictive covenant",
+        "restrictive covenant that might prohibit or restrict",
+        "contractual restriction on employment"
+      ],
+      controls: ["choice", "select", "combobox"]
+    },
+    {
+      key: "hasRelativesAtCompany",
+      label: "Relatives employed by the company",
+      group: "eligibility",
+      input: "select",
+      aliases: [
+        "relatives working for the company",
+        "relatives employed by the company",
+        "relative working for",
+        "relative employed by",
+        "relatives by blood or marriage working for",
+        "family member working for the company",
+        "family member employed by the company"
+      ],
+      controls: ["choice", "select", "combobox"]
+    },
+    {
+      key: "hasFelonyOrPendingProceeding",
+      label: "Felony conviction or pending legal proceeding",
+      group: "eligibility",
+      input: "select",
+      aliases: [
+        "convicted of a felony",
+        "felony conviction",
+        "criminal conviction",
+        "legal proceeding against you",
+        "pending legal proceeding",
+        "criminal proceeding pending",
+        "criminal history"
+      ],
+      controls: ["choice", "select", "combobox"]
+    },
+    {
       key: "citizenshipStatus",
       label: "Citizenship status",
       group: "eligibility",
@@ -1893,6 +1941,9 @@
           "willingToRelocate",
           "willingToTravel",
           "isAtLeast18",
+          "hasRestrictiveCovenant",
+          "hasRelativesAtCompany",
+          "hasFelonyOrPendingProceeding",
           "usWorkAuthorization",
           "usRequiresSponsorship",
           "caWorkAuthorization",

@@ -30,6 +30,9 @@
   const directChoiceNegationKeys = new Set([
     "willingToTravel",
     "isAtLeast18",
+    "hasRestrictiveCovenant",
+    "hasRelativesAtCompany",
+    "hasFelonyOrPendingProceeding",
     "citizenshipStatus",
     "gender",
     "hispanicLatino",

@@ -1339,6 +1339,66 @@ export default function ProfilePage() {
                       <option value="no">No</option>
                     </select>
                   </FieldShell>
+                  <FieldShell
+                    label="Are you subject to a non-compete or restrictive covenant?"
+                    hint="Leave blank unless you want this sensitive compliance answer reused."
+                  >
+                    <select
+                      aria-label="Are you subject to a non-compete or restrictive covenant?"
+                      className={cls.input}
+                      value={booleanChoice(profile.hasRestrictiveCovenant)}
+                      onChange={(event) =>
+                        setField(
+                          "hasRestrictiveCovenant",
+                          parseBooleanChoice(event.target.value),
+                        )
+                      }
+                    >
+                      <option value="">Ask me each time</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                  </FieldShell>
+                  <FieldShell
+                    label="Do you have relatives working for the prospective employer?"
+                    hint="Employer-specific. Leave blank if the answer could differ between applications."
+                  >
+                    <select
+                      aria-label="Do you have relatives working for the prospective employer?"
+                      className={cls.input}
+                      value={booleanChoice(profile.hasRelativesAtCompany)}
+                      onChange={(event) =>
+                        setField(
+                          "hasRelativesAtCompany",
+                          parseBooleanChoice(event.target.value),
+                        )
+                      }
+                    >
+                      <option value="">Ask me each time</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                  </FieldShell>
+                  <FieldShell
+                    label="Felony conviction or pending legal proceeding?"
+                    hint="Sensitive and jurisdiction-dependent. Leave blank to keep it manual."
+                  >
+                    <select
+                      aria-label="Felony conviction or pending legal proceeding?"
+                      className={cls.input}
+                      value={booleanChoice(profile.hasFelonyOrPendingProceeding)}
+                      onChange={(event) =>
+                        setField(
+                          "hasFelonyOrPendingProceeding",
+                          parseBooleanChoice(event.target.value),
+                        )
+                      }
+                    >
+                      <option value="">Ask me each time</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                  </FieldShell>
                 </div>
                 <div className="mt-6 border-t border-gray-200 pt-5 dark:border-gray-800">
                   <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">

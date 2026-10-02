@@ -202,6 +202,9 @@ export interface AutofillProfile {
   preferredOfficeLocations: string;
   securityClearances: string;
   canPerformEssentialFunctions: "" | "yes" | "no";
+  hasRestrictiveCovenant: "" | "yes" | "no";
+  hasRelativesAtCompany: "" | "yes" | "no";
+  hasFelonyOrPendingProceeding: "" | "yes" | "no";
   citizenshipStatus: string;
   citizenshipStatusOther: string;
   workAuthorization: "" | "yes" | "no";
@@ -502,6 +505,11 @@ export function buildAutofillProfile(
     preferredOfficeLocations: listText(preferredOfficeLocations, "\n"),
     securityClearances: listText(profile.securityClearances),
     canPerformEssentialFunctions: choice(profile.canPerformEssentialFunctions),
+    hasRestrictiveCovenant: choice(profile.hasRestrictiveCovenant),
+    hasRelativesAtCompany: choice(profile.hasRelativesAtCompany),
+    hasFelonyOrPendingProceeding: choice(
+      profile.hasFelonyOrPendingProceeding,
+    ),
     citizenshipStatus: !hasCountryContext
       ? ""
       : isCanada
