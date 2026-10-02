@@ -169,6 +169,9 @@ export async function notifyDiscordForDiscovery(
       firstSeenAt: { gte: discoveredAfter },
       isEntryLevel: true,
       employmentType: "intern",
+      applicationStatus: {
+        notIn: ["applied", "interviewing", "offer", "rejected"],
+      },
       availabilityStatus: { not: "closed" },
       postedAt: { gte: postedAfter, lte: postedBefore },
       OR: [

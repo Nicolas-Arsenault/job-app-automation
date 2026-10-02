@@ -119,6 +119,7 @@ If a direct source sees the same requisition again, that row reopens instead of 
   Alerts also require a source-provided posting time within `DISCORD_MAX_POST_AGE_MINUTES` (120 by
   default). Canadian roles are unrestricted; US roles marked no-sponsorship or citizenship/clearance
   required are suppressed, while explicit sponsorship and unstated/unknown cases remain eligible.
+  Jobs already marked applied, interviewing, offer, or rejected are also suppressed.
 - **Change-aware GitHub boards** — ETag / Last-Modified validators avoid re-downloading unchanged
   community feeds while cached content safely refreshes sightings.
 - **Company watchlist expansion** — add `Company | website` rows in Settings; the app resolves

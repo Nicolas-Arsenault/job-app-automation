@@ -143,6 +143,19 @@ describe("Discord internship notifications", () => {
           postedAt: new Date("2026-10-01T12:25:00Z"),
           firstSeenAt: new Date("2026-10-01T12:02:00Z"),
         },
+        {
+          dedupeKey: "new-already-applied",
+          title: "Applied Software Intern",
+          company: "Already Applied Co",
+          applyUrl: "https://example.test/jobs/already-applied",
+          country: "CA",
+          isEntryLevel: true,
+          employmentType: "intern",
+          applicationStatus: "applied",
+          appliedAt: new Date("2026-10-01T12:10:00Z"),
+          postedAt: new Date("2026-10-01T12:20:00Z"),
+          firstSeenAt: new Date("2026-10-01T12:02:00Z"),
+        },
       ],
     });
     const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -166,5 +179,6 @@ describe("Discord internship notifications", () => {
     expect(String(init.body)).not.toContain("No Sponsor Co");
     expect(String(init.body)).not.toContain("Citizens Only Co");
     expect(String(init.body)).not.toContain("Stale Sponsor Co");
+    expect(String(init.body)).not.toContain("Already Applied Co");
   });
 });
