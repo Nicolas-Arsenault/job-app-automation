@@ -70,6 +70,7 @@ function buildJobsUrl(
 
   const search = filters.q.trim();
   if (search) params.set("q", search);
+  if (filters.term.length > 0) params.set("term", filters.term.join(","));
   if (filters.skills.length > 0) params.set("skills", filters.skills.join(","));
   if (filters.sponsorship.length > 0) params.set("sponsorship", filters.sponsorship.join(","));
   if (filters.status.length > 0) params.set("status", filters.status.join(","));
@@ -91,6 +92,7 @@ function hasActiveFilters(filters: FilterState): boolean {
     filters.sort !== DEFAULT_FILTERS.sort ||
     filters.since !== DEFAULT_FILTERS.since ||
     Boolean(filters.q.trim()) ||
+    filters.term.length > 0 ||
     filters.skills.length > 0 ||
     filters.sponsorship.length > 0 ||
     filters.employmentType.length > 0 ||

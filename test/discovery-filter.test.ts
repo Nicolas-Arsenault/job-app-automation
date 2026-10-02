@@ -206,11 +206,57 @@ describe("classifyEntryLevel", () => {
     expect(v.requiresAdvancedDegree).toBe(true);
   });
 
+  it("rejects graduate-only internship tracks expressed in titles or enrollment language", () => {
+    const titles = [
+      "Machine Learning Intern (Masters) - Summer 2027",
+      "Software Engineer Intern - MS/PhD",
+      "Machine Learning PhD Software Engineer Intern",
+      "AI Developer Co-op - Graduate Program",
+    ];
+    for (const title of titles) {
+      const verdict = classifyEntryLevel(
+        { title },
+        { includeInternships: true, internshipsOnly: true },
+      );
+      expect(verdict.requiresAdvancedDegree, title).toBe(true);
+      expect(verdict.isEntryLevel, title).toBe(false);
+    }
+
+    const descriptions = [
+      "Are working towards a Masters degree in Computer Science.",
+      "Working towards a Master's or PhD degree in a related field.",
+      "Currently pursuing a Ph.D. in computer science.",
+      "Candidates must be enrolled in a graduate degree program.",
+    ];
+    for (const description of descriptions) {
+      const verdict = classifyEntryLevel(
+        { title: "Software Engineer Intern", description },
+        { includeInternships: true, internshipsOnly: true },
+      );
+      expect(verdict.requiresAdvancedDegree, description).toBe(true);
+      expect(verdict.isEntryLevel, description).toBe(false);
+    }
+  });
+
   it("keeps roles where a Master's is only preferred / bachelor's accepted", () => {
     const v = classifyEntryLevel({
       title: "Software Engineer",
       description: "Bachelor's degree required; Master's degree or equivalent experience preferred.",
     });
     expect(v.isEntryLevel).toBe(true);
+
+    const optional = classifyEntryLevel({
+      title: "Software Engineer Intern",
+      description: "Graduate degrees are preferred, but not a must.",
+    }, { includeInternships: true, internshipsOnly: true });
+    expect(optional.requiresAdvancedDegree).toBe(false);
+    expect(optional.isEntryLevel).toBe(true);
+
+    const eitherDegree = classifyEntryLevel({
+      title: "Software Engineer Intern",
+      description: "Currently pursuing a Bachelor's or Master's degree in Computer Science.",
+    }, { includeInternships: true, internshipsOnly: true });
+    expect(eitherDegree.requiresAdvancedDegree).toBe(false);
+    expect(eitherDegree.isEntryLevel).toBe(true);
   });
 });

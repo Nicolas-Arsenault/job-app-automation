@@ -236,6 +236,7 @@ const AUTHORITATIVE_SYSTEMS = new Set([
   "ashby",
   "workable",
   "teamtailor",
+  "smartrecruiters",
 ]);
 const COMPLETE_SEARCH_SYSTEMS = new Set(["phenom", "spotify", "githubboard"]);
 export const POSTING_VERIFICATION_CACHE_MS = 6 * 60 * 60 * 1000;
@@ -259,7 +260,11 @@ export function describeApiSource(company: ApiCompany): DiscoverySourceDescripto
     ? `${company.board.owner}/${company.board.repo}/${company.board.ref}/${company.board.path}`
     : company.workday
       ? `${company.workday.host}/${company.workday.tenant}/${company.workday.site}`
-      : company.yc?.directoryUrl ?? company.token ?? company.name;
+      : company.eightfold
+        ? `${company.eightfold.host}/${company.eightfold.domain}`
+        : company.oracle
+          ? `${company.oracle.host}/${company.oracle.site}`
+          : company.yc?.directoryUrl ?? company.token ?? company.name;
   const authoritative = AUTHORITATIVE_SYSTEMS.has(company.system);
   const aggregator = company.system === "githubboard";
   return {
@@ -267,7 +272,9 @@ export function describeApiSource(company: ApiCompany): DiscoverySourceDescripto
     name: company.name,
     system: company.system,
     company:
-      company.system === "githubboard" || company.system === "ycombinator"
+      company.system === "githubboard" ||
+      company.system === "ycombinator" ||
+      company.system === "watchlist"
         ? null
         : canonicalCompanyName(company.name),
     authoritative,

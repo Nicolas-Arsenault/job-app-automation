@@ -11,6 +11,7 @@ import { CompanyLogo } from "./components/CompanyLogo";
 import { ScanButton } from "./components/ScanButton";
 import { ACTIVE_JOB_WHERE } from "@/lib/jobs/availability";
 import { getDiscoveryScopeCopy } from "@/lib/discovery/scope";
+import { getDiscoveryConfig } from "@/lib/discovery/config";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,13 @@ function timeAgo(d: Date | null): string {
 }
 
 export default async function OverviewPage() {
-  const entryWhere = { isEntryLevel: true, ...ACTIVE_JOB_WHERE } as const;
-  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany] = await Promise.all([
+  const discoveryConfig = await getDiscoveryConfig();
+  const entryWhere = {
+    isEntryLevel: true,
+    ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
+    ...ACTIVE_JOB_WHERE,
+  } as const;
+  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues] = await Promise.all([
     getDiscoveryScopeCopy(),
     prisma.job.count({ where: { ...entryWhere, country: "US" } }),
     prisma.job.count({ where: { ...entryWhere, country: "CA" } }),
@@ -53,6 +59,20 @@ export default async function OverviewPage() {
       by: ["company", "discoverySystem"],
       where: { ...entryWhere, country: { in: ["US", "CA"] } },
       _count: { _all: true },
+    }),
+    prisma.discoverySource.findMany({
+      where: { lastStatus: { in: ["error", "degraded"] } },
+      orderBy: { lastRunAt: "desc" },
+      select: {
+        key: true,
+        name: true,
+        company: true,
+        lastStatus: true,
+        lastMessage: true,
+        lastRunAt: true,
+        lastCompleteRunAt: true,
+      },
+      take: 12,
     }),
   ]);
 
@@ -81,6 +101,37 @@ export default async function OverviewPage() {
         <b>Discovery mode.</b> {scope.geographyNeutralSummary} Auto-apply and resume matching are
         paused. Use <b>Run scrape</b> to refresh API and supported browser sources, including Shopify,
         and score newly discovered jobs.
+      </div>
+
+      <div
+        className={
+          "mb-6 rounded-xl border p-4 text-sm " +
+          (sourceHealthIssues.length
+            ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+            : "border-green-200 bg-green-50 text-green-900 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200")
+        }
+      >
+        <div className="font-semibold">
+          Source health: {sourceHealthIssues.length ? `${sourceHealthIssues.length} need attention` : "all reporting sources healthy"}
+        </div>
+        {sourceHealthIssues.length > 0 ? (
+          <div className="mt-2 space-y-2">
+            {sourceHealthIssues.map((source) => (
+              <div key={source.key}>
+                <span className="font-medium">{source.company ?? source.name}</span>
+                {` · ${source.lastStatus} · ${timeAgo(source.lastRunAt)}`}
+                {source.lastMessage ? ` — ${source.lastMessage}` : ""}
+                {source.lastCompleteRunAt
+                  ? ` · last clean run ${timeAgo(source.lastCompleteRunAt)}`
+                  : " · no clean run recorded"}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-1 text-xs opacity-80">
+            Per-company scrape results are stored after every discovery run; failures and partial responses appear here.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">

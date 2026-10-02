@@ -3,9 +3,10 @@ import { classifyEntryLevel, isSoftwareRole } from "../lib/discovery/entryLevel"
 import { DEFAULT_DISCOVERY_CONFIG, toEntryLevelOptions } from "../lib/discovery/config";
 
 describe("config-driven classifier", () => {
-  it("defaults reproduce the historical entry-level behavior", () => {
+  it("defaults keep only software internships", () => {
     const opts = toEntryLevelOptions(DEFAULT_DISCOVERY_CONFIG);
-    expect(classifyEntryLevel({ title: "Software Engineer I" }, opts).isEntryLevel).toBe(true);
+    expect(classifyEntryLevel({ title: "Software Engineer I" }, opts).isEntryLevel).toBe(false);
+    expect(classifyEntryLevel({ title: "Software Engineer Intern" }, opts).isEntryLevel).toBe(true);
     expect(classifyEntryLevel({ title: "Senior Software Engineer" }, opts).isEntryLevel).toBe(false);
     expect(
       classifyEntryLevel(
@@ -47,21 +48,21 @@ describe("config-driven classifier", () => {
   it("raises the YoE ceiling when configured", () => {
     const desc = "5 years of experience required.";
     expect(classifyEntryLevel({ title: "Software Engineer", description: desc }).isEntryLevel).toBe(false);
-    const opts = toEntryLevelOptions({ ...DEFAULT_DISCOVERY_CONFIG, maxYoE: 6 });
+    const opts = toEntryLevelOptions({ ...DEFAULT_DISCOVERY_CONFIG, internshipsOnly: false, maxYoE: 6 });
     expect(classifyEntryLevel({ title: "Software Engineer", description: desc }, opts).isEntryLevel).toBe(true);
   });
 
   it("stops excluding advanced degrees when configured off", () => {
     const desc = "Master's degree or PhD required.";
     expect(classifyEntryLevel({ title: "Software Engineer", description: desc }).isEntryLevel).toBe(false);
-    const opts = toEntryLevelOptions({ ...DEFAULT_DISCOVERY_CONFIG, excludeAdvancedDegree: false });
+    const opts = toEntryLevelOptions({ ...DEFAULT_DISCOVERY_CONFIG, internshipsOnly: false, excludeAdvancedDegree: false });
     expect(classifyEntryLevel({ title: "Software Engineer", description: desc }, opts).isEntryLevel).toBe(true);
   });
 
   it("broadens scope with extra role keywords", () => {
     // "Data Scientist" isn't in the built-in software vocabulary.
     expect(isSoftwareRole("Data Scientist")).toBe(false);
-    const opts = toEntryLevelOptions({ ...DEFAULT_DISCOVERY_CONFIG, roleKeywords: ["data scientist"] });
+    const opts = toEntryLevelOptions({ ...DEFAULT_DISCOVERY_CONFIG, internshipsOnly: false, roleKeywords: ["data scientist"] });
     expect(isSoftwareRole("Data Scientist", opts)).toBe(true);
     expect(classifyEntryLevel({ title: "Data Scientist" }, opts).isEntryLevel).toBe(true);
   });

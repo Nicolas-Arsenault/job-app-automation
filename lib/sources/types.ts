@@ -8,6 +8,7 @@ export type AtsType =
   | "icims"
   | "workable"
   | "teamtailor"
+  | "smartrecruiters"
   | "unknown";
 
 export type SourceKind =

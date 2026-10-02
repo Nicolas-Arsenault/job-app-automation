@@ -146,6 +146,9 @@ export interface ProfileData {
   isAtLeast18?: boolean | null;
   securityClearances?: string[];
   canPerformEssentialFunctions?: boolean | null;
+  hasRestrictiveCovenant?: boolean | null;
+  hasRelativesAtCompany?: boolean | null;
+  hasFelonyOrPendingProceeding?: boolean | null;
   usCitizenshipStatus?: string;
   usCitizenshipStatusOther?: string;
   caCitizenshipStatus?: string;
@@ -243,6 +246,9 @@ export const DEFAULT_PROFILE: ProfileData = {
   isAtLeast18: null,
   securityClearances: [],
   canPerformEssentialFunctions: null,
+  hasRestrictiveCovenant: null,
+  hasRelativesAtCompany: null,
+  hasFelonyOrPendingProceeding: null,
   usCitizenshipStatus: "",
   usCitizenshipStatusOther: "",
   caCitizenshipStatus: "",
@@ -470,6 +476,11 @@ function normalizeProfileData(data: ProfileData): ProfileData {
       ? ""
       : percentageValue(profile.maxTravelPercentage);
   profile.isAtLeast18 = triState(profile.isAtLeast18);
+  profile.hasRestrictiveCovenant = triState(profile.hasRestrictiveCovenant);
+  profile.hasRelativesAtCompany = triState(profile.hasRelativesAtCompany);
+  profile.hasFelonyOrPendingProceeding = triState(
+    profile.hasFelonyOrPendingProceeding,
+  );
   const legacyCountry = String(profile.country || "").trim().toLowerCase();
   const legacyIsCanada =
     legacyCountry === "ca" || legacyCountry.includes("canada");

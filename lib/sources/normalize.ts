@@ -16,6 +16,7 @@ export function detectAts(url: string): AtsType {
   if (host.includes("icims.com")) return "icims";
   if (host.includes("workable.com")) return "workable";
   if (host.includes("teamtailor.com")) return "teamtailor";
+  if (host.includes("smartrecruiters.com")) return "smartrecruiters";
   return "unknown";
 }
 
@@ -99,6 +100,10 @@ export function extractExternalId(
     path = new URL(applyUrl).pathname;
   } catch {
     return null;
+  }
+  if (atsType === "smartrecruiters") {
+    const m = path.match(/\/(\d{8,})-[^/]+/i);
+    if (m) return m[1];
   }
   if (atsType === "greenhouse") {
     const m = path.match(/jobs\/(\d+)/);

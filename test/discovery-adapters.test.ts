@@ -5,6 +5,7 @@ import { prisma } from "../lib/db";
 import { jsonResponse } from "./helpers";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -95,7 +96,7 @@ describe("Canada-first ATS adapters", () => {
     vi.stubGlobal("fetch", fetchMock);
     const company = API_COMPANIES.find((candidate) => candidate.name === "Genetec")!;
 
-    const posts = await fetchCompanyPostings(company);
+    const posts = await fetchCompanyPostings(company, { internshipsOnly: true });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://apply.workable.com/api/v1/widget/accounts/genetec-inc",
@@ -168,6 +169,8 @@ describe("Canada-first ATS adapters", () => {
 
 describe("microsoft adapter (pcsx)", () => {
   it("maps positions to postings with country + apply URL", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -196,7 +199,9 @@ describe("microsoft adapter (pcsx)", () => {
     );
 
     const c = API_COMPANIES.find((x) => x.name === "Microsoft")!;
-    const posts = await fetchCompanyPostings(c);
+    const pending = fetchCompanyPostings(c, { internshipsOnly: true });
+    await vi.advanceTimersByTimeAsync(2_500);
+    const posts = await pending;
     const us = posts.find((p) => p.externalId === "111")!;
     const ca = posts.find((p) => p.externalId === "222")!;
     expect(us.title).toBe("Software Engineer");
@@ -205,9 +210,15 @@ describe("microsoft adapter (pcsx)", () => {
     expect(us.postedAt).toBeInstanceOf(Date);
     expect(ca.country).toBe("CA");
     expect(ca.system).toBe("microsoft");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("query=intern"),
+      expect.anything(),
+    );
   });
 
-  it("keeps partial results and reports repeated rate limiting", async () => {
+  it("keeps partial results and stops immediately when rate limited", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
     let calls = 0;
     const fetchMock = vi.fn(async () => {
       calls++;
@@ -233,151 +244,28 @@ describe("microsoft adapter (pcsx)", () => {
     const onWarning = vi.fn();
     const company = API_COMPANIES.find((candidate) => candidate.name === "Microsoft")!;
 
-    const posts = await fetchCompanyPostings(company, { onWarning });
+    const pending = fetchCompanyPostings(company, { onWarning });
+    await vi.advanceTimersByTimeAsync(2_499);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const posts = await pending;
 
     expect(posts).toHaveLength(10);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(onWarning).toHaveBeenCalledWith(
       expect.stringMatching(/pagination stopped after 10 postings: HTTP 429/),
     );
   });
 
-  it("uses the fallback delay when Retry-After is missing", async () => {
-    vi.useFakeTimers();
-    try {
-      let calls = 0;
-      const fetchMock = vi.fn(async () => {
-        calls++;
-        if (calls === 1) return new Response("", { status: 429 });
-        return jsonResponse({ data: { count: 0, positions: [] } });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-      const company = API_COMPANIES.find(
-        (candidate) => candidate.name === "Microsoft",
-      )!;
-
-      const pending = fetchCompanyPostings(company);
-      await vi.advanceTimersByTimeAsync(1_499);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      await vi.advanceTimersByTimeAsync(200);
-
-      await expect(pending).resolves.toEqual([]);
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("uber careers adapter", () => {
-  it("uses the current one-shot jobs API and maps its response", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      jsonResponse({
-        jobs: [
-          {
-            Id: "301184",
-            Title: "iOS Engineer II",
-            Description: "<p>Build rider experiences.</p>",
-            DisplayDate: "2026-08-09T06:10:02Z",
-            Locations: [
-              {
-                City: "San Francisco",
-                Region: "California",
-                Country: "United States",
-              },
-            ],
-            Urls: [
-              {
-                Url: "/en/jobs/301184/",
-                IsDefault: true,
-              },
-            ],
-          },
-          {
-            Id: "301185",
-            Title: "Software Engineer II",
-            Locations: [
-              {
-                City: "Toronto",
-                Region: "Ontario",
-                Country: "Canada",
-              },
-            ],
-            Urls: [],
-          },
-        ],
-      }),
-    );
+  it("does not retry an initial rate limit response", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 429 }));
     vi.stubGlobal("fetch", fetchMock);
     const company = API_COMPANIES.find(
-      (candidate) => candidate.name === "Uber",
+      (candidate) => candidate.name === "Microsoft",
     )!;
 
-    const posts = await fetchCompanyPostings(company);
-
+    await expect(fetchCompanyPostings(company)).rejects.toThrow("HTTP 429");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://jobs.uber.com/api/jobs/search?query=software%20engineer",
-    );
-    expect(posts).toMatchObject([
-      {
-        externalId: "301184",
-        country: "US",
-        applyUrl: "https://jobs.uber.com/en/jobs/301184/",
-        description: "Build rider experiences.",
-      },
-      {
-        externalId: "301185",
-        country: "CA",
-        applyUrl: "https://jobs.uber.com/en/jobs/301185/",
-      },
-    ]);
-  });
-
-  it("retries one transient response but not endpoint drift", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(
-          new Response("", {
-            status: 503,
-            headers: { "Retry-After": "0" },
-          }),
-        )
-        .mockResolvedValueOnce(jsonResponse({ jobs: [] }));
-      vi.stubGlobal("fetch", fetchMock);
-      const company = API_COMPANIES.find(
-        (candidate) => candidate.name === "Uber",
-      )!;
-
-      const pending = fetchCompanyPostings(company);
-      await vi.advanceTimersByTimeAsync(999);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(1);
-      await expect(pending).resolves.toEqual([]);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-
-      fetchMock.mockReset();
-      fetchMock.mockResolvedValue(new Response("", { status: 404 }));
-      await expect(fetchCompanyPostings(company)).rejects.toThrow("HTTP 404");
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("rejects malformed success responses instead of faking an empty run", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ jobs: null })));
-    const company = API_COMPANIES.find(
-      (candidate) => candidate.name === "Uber",
-    )!;
-
-    await expect(fetchCompanyPostings(company)).rejects.toThrow(
-      "Uber response did not contain a jobs array",
-    );
   });
 });
 
@@ -424,9 +312,15 @@ describe("netflix careers adapter", () => {
       (candidate) => candidate.name === "Netflix",
     )!;
 
-    const posts = await fetchCompanyPostings(company);
+    const posts = await fetchCompanyPostings(company, { internshipsOnly: true });
 
     expect(posts).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const url = new URL(String(input));
+        return url.pathname.endsWith("/jobs") && url.searchParams.get("query") === "intern";
+      }),
+    ).toBe(true);
     expect(
       fetchMock.mock.calls.some(([input]) => {
         const url = new URL(String(input));
@@ -556,6 +450,40 @@ describe("github board adapter (aggregator listings.json)", () => {
     expect(beta.country).toBe("CA");
   });
 
+  it("reuses a cached board body after GitHub returns 304", async () => {
+    const board = BOARD_SOURCES[0];
+    const b = board.board!;
+    const cacheKey = `githubboard:${b.owner}/${b.repo}/${b.ref}/${b.path}`;
+    await prisma.discoveryHttpCache.deleteMany({ where: { key: cacheKey } });
+    const listings = [
+      {
+        company_name: "Acme",
+        title: "Software Engineer Intern",
+        url: "https://example.test/jobs/1",
+        locations: ["Toronto, Canada"],
+        active: true,
+        id: "etag-row",
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(listings), {
+          status: 200,
+          headers: { ETag: '"board-v1"', "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await fetchCompanyPostings(board)).toHaveLength(1);
+    expect(await fetchCompanyPostings(board)).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      headers: expect.objectContaining({ "If-None-Match": '"board-v1"' }),
+    });
+  });
+
   it("parses open roles from a Canada-focused Markdown board", async () => {
     const markdown = `
 | Company | Role | Location | Application / Link | Status |
@@ -565,9 +493,20 @@ describe("github board adapter (aggregator listings.json)", () => {
 | **Closed Co** | Software Developer | Vancouver, Canada | [Apply](https://jobs.example.com/closed) | Closed |
 `;
     vi.stubGlobal("fetch", vi.fn(async () => new Response(markdown)));
-    const board = BOARD_SOURCES.find(
-      (candidate) => candidate.name === "Canada New-Grad 2026",
-    )!;
+    const board: ApiCompany = {
+      name: "Canada internship Markdown fixture",
+      method: "api",
+      system: "githubboard",
+      countryFilter: "post",
+      queryTerms: ["software"],
+      board: {
+        owner: "fixture",
+        repo: "canada-internships",
+        ref: "main",
+        path: "README.md",
+        format: "markdown",
+      },
+    };
 
     const posts = await fetchCompanyPostings(board);
 
@@ -586,6 +525,77 @@ describe("github board adapter (aggregator listings.json)", () => {
         applyUrl: "https://jobs.example.com/acme-2",
       },
     ]);
+  });
+});
+
+describe("SmartRecruiters adapter", () => {
+  it("paginates public country feeds and hydrates software internship details", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/postings?") && url.includes("country=us")) {
+        return jsonResponse({
+          totalFound: 2,
+          content: [
+            {
+              id: "744000100000001",
+              name: "Software Engineer Intern",
+              releasedDate: "2026-09-30T12:00:00Z",
+              location: { fullLocation: "Austin, TX, United States" },
+              experienceLevel: { id: "internship", label: "Internship" },
+            },
+            {
+              id: "744000100000002",
+              name: "Marketing Intern",
+              location: { fullLocation: "Austin, TX, United States" },
+            },
+          ],
+        });
+      }
+      if (url.includes("/postings?") && url.includes("country=ca")) {
+        return jsonResponse({ totalFound: 0, content: [] });
+      }
+      if (url.endsWith("/postings/744000100000001")) {
+        return jsonResponse({
+          id: "744000100000001",
+          name: "Software Engineer Intern",
+          releasedDate: "2026-09-30T12:00:00Z",
+          applyUrl: "https://jobs.smartrecruiters.com/Acme/744000100000001-software-engineer-intern",
+          location: { fullLocation: "Austin, TX, United States" },
+          experienceLevel: { id: "internship", label: "Internship" },
+          typeOfEmployment: { id: "intern", label: "Intern" },
+          jobAd: {
+            sections: {
+              jobDescription: { title: "Job Description", text: "<p>Build backend APIs.</p>" },
+            },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings(
+      {
+        name: "Acme",
+        method: "api",
+        system: "smartrecruiters",
+        token: "Acme",
+        countryFilter: "native",
+        queryTerms: ["software engineer"],
+      },
+      { countries: ["US", "CA"] },
+    );
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      company: "Acme",
+      system: "smartrecruiters",
+      title: "Software Engineer Intern",
+      country: "US",
+      externalId: "744000100000001",
+    });
+    expect(posts[0].description).toContain("Experience level: Internship");
+    expect(posts[0].description).toContain("Build backend APIs");
   });
 });
 
@@ -918,7 +928,171 @@ describe("Jibe careers adapter", () => {
   });
 });
 
+describe("Eightfold adapter", () => {
+  it("loads current search results and details for relevant North American roles", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/api/pcsx/search?")) {
+        return jsonResponse({
+          data: {
+            count: 2,
+            positions: [
+              {
+                id: 101,
+                displayJobId: "REQ-101",
+                name: "Software Developer Intern",
+                standardizedLocations: ["Toronto, ON, CA"],
+                postedTs: 1_790_812_800,
+                positionUrl: "/careers/job/101",
+              },
+              {
+                id: 102,
+                displayJobId: "REQ-102",
+                name: "People Operations Intern",
+                standardizedLocations: ["Boston, MA, US"],
+                postedTs: 1_790_812_800,
+                positionUrl: "/careers/job/102",
+              },
+            ],
+          },
+        });
+      }
+      if (url.includes("/api/pcsx/position_details?")) {
+        return jsonResponse({
+          data: {
+            id: 101,
+            displayJobId: "REQ-101",
+            name: "Software Developer Intern",
+            standardizedLocations: ["Toronto, ON, CA"],
+            postedTs: 1_790_812_800,
+            positionUrl: "/careers/job/101",
+            jobDescription: "Build <b>cloud software</b>.",
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings({
+      name: "Acme",
+      method: "api",
+      system: "eightfold",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+      eightfold: { host: "jobs.acme.test", domain: "acme.test" },
+    });
+
+    expect(posts).toHaveLength(2);
+    expect(posts[0]).toMatchObject({
+      system: "eightfold",
+      externalId: "REQ-101",
+      country: "CA",
+      description: "Build cloud software .",
+      applyUrl: "https://jobs.acme.test/careers/job/101",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Oracle Recruiting adapter", () => {
+  it("uses the public Candidate Experience list and detail endpoints", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("recruitingCEJobRequisitions?")) {
+        return jsonResponse({
+          items: [{
+            TotalJobsCount: 2,
+            requisitionList: [
+              {
+                Id: "40117",
+                RequisitionId: 40117,
+                Title: "Software Developer Co-op/Intern",
+                PostedDate: "2026-10-01",
+                PrimaryLocation: "Canada",
+                workLocation: [{ TownOrCity: "Ottawa", Region2: "Ontario", Country: "CA" }],
+                secondaryLocations: [],
+              },
+              {
+                Id: "40118",
+                Title: "Finance Intern",
+                PostedDate: "2026-10-01",
+                PrimaryLocation: "France",
+                secondaryLocations: [],
+              },
+            ],
+          }],
+        });
+      }
+      if (url.includes("recruitingCEJobRequisitionDetails?")) {
+        return jsonResponse({
+          items: [{
+            Id: "40117",
+            RequisitionId: 40117,
+            Title: "Software Developer Co-op/Intern",
+            ExternalPostedStartDate: "2026-10-01T14:00:00Z",
+            PrimaryLocation: "Canada",
+            workLocation: [{ TownOrCity: "Ottawa", Region2: "Ontario", Country: "CA" }],
+            ExternalDescriptionStr: "Build software.",
+            ExternalQualificationsStr: "Currently pursuing a bachelor's degree.",
+          }],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings({
+      name: "Acme",
+      method: "api",
+      system: "oracle",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+      oracle: { host: "oracle.acme.test", careerHost: "jobs.acme.test", site: "CX_1" },
+    });
+
+    expect(posts).toHaveLength(2);
+    expect(posts[0]).toMatchObject({
+      system: "oracle",
+      externalId: "40117",
+      country: "CA",
+      description: "Build software. Currently pursuing a bachelor's degree.",
+      applyUrl: "https://jobs.acme.test/en/sites/CX_1/job/40117/",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("Workday adapter details", () => {
+  it("uses internship searches globally and Cisco's native intern facet", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return jsonResponse({ jobPostings: [] });
+      }),
+    );
+
+    const nvidia = API_COMPANIES.find((candidate) => candidate.name === "NVIDIA")!;
+    await fetchCompanyPostings(nvidia, { internshipsOnly: true });
+    expect(bodies.map((body) => body.searchText)).toEqual(["intern", "co-op"]);
+    expect(bodies.every((body) => JSON.stringify(body.appliedFacets) === "{}")).toBe(true);
+
+    bodies.length = 0;
+    const cisco = API_COMPANIES.find((candidate) => candidate.name === "Cisco")!;
+    await fetchCompanyPostings(cisco, { internshipsOnly: true });
+    expect(bodies).toEqual([
+      expect.objectContaining({
+        searchText: "",
+        appliedFacets: {
+          workerSubType: ["a5e1942e7b2c01c6907030106001b700"],
+        },
+      }),
+    ]);
+    expect(JSON.stringify(cisco)).not.toMatch(/new.?grad/i);
+  });
+
   it("loads official descriptions for relevant configured roles", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
@@ -1079,6 +1253,14 @@ describe("discovery catalog", () => {
     expect(bySystem("Genetec")).toBe("workable");
     expect(bySystem("Vention")).toBe("teamtailor");
     expect(bySystem("Hopper")).toBe("ashby");
+    expect(bySystem("Coveo")).toBe("greenhouse");
+    expect(bySystem("Ciena")).toBe("workday");
+    expect(bySystem("Kinaxis")).toBe("phenom");
+    expect(bySystem("Autodesk")).toBe("eightfold");
+    expect(bySystem("Nokia")).toBe("oracle");
+    expect(bySystem("Ericsson")).toBe("eightfold");
+    expect(bySystem("Clio")).toBe("workday");
+    expect(bySystem("BlackBerry")).toBe("workday");
   });
 
   it("registers the quant / trading firms with the expected system", () => {
@@ -1104,20 +1286,19 @@ describe("discovery catalog", () => {
   });
 
   it("registers the GitHub board sources with a repo config", () => {
-    expect(BOARD_SOURCES.length).toBeGreaterThanOrEqual(5);
+    expect(BOARD_SOURCES).toHaveLength(3);
     for (const b of BOARD_SOURCES) {
       expect(b.system).toBe("githubboard");
       expect(b.board?.owner).toBeTruthy();
       expect(b.board?.repo).toBeTruthy();
       expect(b.board?.path).toBeTruthy();
     }
-    expect(
-      BOARD_SOURCES.find((source) => source.name === "Canada New-Grad 2026")?.board,
-    ).toMatchObject({
-      owner: "JeelTikiwala",
-      repo: "New-Grad-2026",
-      format: "markdown",
-    });
+    expect(BOARD_SOURCES.map((source) => source.board?.repo)).toEqual([
+      "Summer2027-Internships",
+      "canada-tech-internships-summer-2027",
+      "Summer2027-Internships",
+    ]);
+    expect(BOARD_SOURCES.some((source) => /new-?grad/i.test(source.board?.repo ?? ""))).toBe(false);
   });
 
   it("registers the Y Combinator expansion source with a directory URL", () => {
@@ -1127,7 +1308,8 @@ describe("discovery catalog", () => {
     // It must run after every named company so native listings win dedup.
     const ycIdx = DISCOVERY_SOURCES.indexOf(YC_SOURCE);
     const lastNamed = DISCOVERY_SOURCES.reduce(
-      (acc, c, i) => (c.system !== "ycombinator" && c.system !== "githubboard" ? i : acc),
+      (acc, c, i) =>
+        (!["ycombinator", "watchlist", "githubboard"].includes(c.system) ? i : acc),
       -1,
     );
     expect(ycIdx).toBeGreaterThan(lastNamed);

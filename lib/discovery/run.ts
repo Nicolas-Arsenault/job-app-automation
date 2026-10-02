@@ -531,20 +531,30 @@ export async function runDiscovery(opts?: {
 }): Promise<DiscoveryRunResult> {
   const cycleStartedAt = new Date();
   const onlyEntryLevel = opts?.onlyEntryLevel ?? true;
-  const concurrency = opts?.concurrency ?? 5;
+  const concurrency = opts?.concurrency ?? 4;
   const config = opts?.config ?? (await getDiscoveryConfig());
   const ingestOpts: IngestOptions = {
     entryOptions: toEntryLevelOptions(config),
     countries: config.countries,
   };
-  const ctx: FetchContext = { yc: config.yc, countries: config.countries };
+  const ctx: FetchContext = {
+    yc: config.yc,
+    countries: config.countries,
+    internshipsOnly: config.internshipsOnly,
+    watchedCompanies: config.watchedCompanies,
+  };
   const disabled = new Set(config.disabledSources.map((s) => s.toLowerCase()));
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
   const targets = DISCOVERY_SOURCES.filter((c) => {
     if (disabled.has(c.name.toLowerCase())) return false;
+    if (c.system === "watchlist" && config.watchedCompanies.length === 0) return false;
     if (wanted) return wanted.includes(c.name.toLowerCase());
     return true;
-  });
+  }).map((company) =>
+    config.queryTerms.length
+      ? { ...company, queryTerms: config.queryTerms }
+      : company,
+  );
 
   const results: CompanyRunResult[] = [];
   // Named company sites first (concurrent batches), then the aggregator sources
@@ -552,7 +562,7 @@ export async function runDiscovery(opts?: {
   // GitHub boards. Aggregators re-list roles already found natively, so running
   // them last + one-at-a-time makes cross-source dedup deterministic (each sees
   // every prior insert) and the richer native listing wins.
-  const AGGREGATORS = ["ycombinator", "githubboard"] as const;
+  const AGGREGATORS = ["ycombinator", "watchlist", "githubboard"] as const;
   const isAggregator = (c: ApiCompany) =>
     (AGGREGATORS as readonly string[]).includes(c.system);
   const companies = targets.filter((c) => !isAggregator(c));

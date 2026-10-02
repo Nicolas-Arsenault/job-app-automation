@@ -2,6 +2,7 @@ import { prisma } from "../lib/db";
 import { buildConnectionSet, saveConnectionSet } from "../lib/connections/store";
 import { parseConnectionsCsv } from "../lib/connections/parse";
 import { saveProfile } from "../lib/settings";
+import { saveDiscoveryConfig } from "../lib/discovery/config";
 
 // Deterministic, network-free fixtures for the Playwright e2e suite.
 // Wipes the target database (DATABASE_URL — an isolated e2e.db) and inserts a
@@ -239,6 +240,10 @@ async function main() {
     resumeText:
       "Technical Skills: TypeScript, ReactJS, Node JS, PostgreSQL, and Amazon Web Services.",
   });
+  // Most e2e specs exercise the historical mixed entry-level queue. Production
+  // defaults remain internship-only; this explicit fixture override keeps those
+  // unrelated queue assertions stable.
+  await saveDiscoveryConfig({ internshipsOnly: false, includeInternships: true });
 
   const source = await prisma.source.create({
     data: { name: "E2E Fixture Source", kind: "json", config: "{}", enabled: false },

@@ -119,6 +119,9 @@ describe("Chrome extension profile storage", () => {
       graduationDate: "2025-05",
       graduationDateExact: "2024-02-29",
       canPerformEssentialFunctions: "yes",
+      hasRestrictiveCovenant: "no",
+      hasRelativesAtCompany: "no",
+      hasFelonyOrPendingProceeding: "no",
       pronouns: "They/them",
       pronounsOther: "Ze/hir",
       gender: "Non-binary",
@@ -154,6 +157,9 @@ describe("Chrome extension profile storage", () => {
     expect(profile.graduationDate).toBe("2025-05");
     expect(profile.graduationDateExact).toBe("2024-02-29");
     expect(profile.canPerformEssentialFunctions).toBe("yes");
+    expect(profile.hasRestrictiveCovenant).toBe("no");
+    expect(profile.hasRelativesAtCompany).toBe("no");
+    expect(profile.hasFelonyOrPendingProceeding).toBe("no");
     expect(profile.pronouns).toBe("They/them");
     expect(profile.pronounsOther).toBe("Ze/hir");
     expect(profile.gender).toBe("Non-binary");
@@ -394,6 +400,54 @@ describe("Chrome extension profile storage", () => {
       usCitizenshipStatusOther: "",
       caCitizenshipStatusOther: "",
     });
+  });
+});
+
+describe("reusable compliance questions", () => {
+  it.each([
+    [
+      "Have you ever signed or are you subject to a non-compete agreement, or other restrictive covenant that might restrict your ability to fulfill this position?",
+      "hasRestrictiveCovenant",
+    ],
+    [
+      "Do you have any relatives by blood or marriage working for Gas South?",
+      "hasRelativesAtCompany",
+    ],
+    [
+      "Have you ever been convicted of a felony or do you have any legal proceeding against you at this time?",
+      "hasFelonyOrPendingProceeding",
+    ],
+  ])("recognizes %s", (prompt, expectedKey) => {
+    const analysis = matcher.analyzeDefinition(
+      {
+        signals: [{ text: prompt, weight: 1, source: "prompt" }],
+        controlKind: "select",
+        optionTexts: ["Yes", "No"],
+      },
+      profileSchema.fields,
+    );
+
+    expect(analysis.status).toBe("confident");
+    expect(analysis.match?.definition.key).toBe(expectedKey);
+  });
+
+  it("keeps location-specific residence attestations manual", () => {
+    const analysis = matcher.analyzeDefinition(
+      {
+        signals: [
+          {
+            text: "This position requires applicants to reside in Georgia or Florida. Do you currently reside in or near Georgia or Florida?",
+            weight: 1,
+            source: "prompt",
+          },
+        ],
+        controlKind: "select",
+        optionTexts: ["Yes", "No"],
+      },
+      profileSchema.fields,
+    );
+
+    expect(analysis.status).toBe("none");
   });
 });
 

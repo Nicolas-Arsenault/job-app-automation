@@ -7,7 +7,11 @@ import {
   CATEGORY_ORDER,
   type JobCategory,
 } from "../lib/discovery/categories";
-import { API_COMPANIES, BROWSER_COMPANIES } from "../lib/discovery/companies";
+import {
+  API_COMPANIES,
+  BROWSER_COMPANIES,
+  SCRAPABLE_BROWSER_SYSTEMS,
+} from "../lib/discovery/companies";
 
 describe("categorizeCompany", () => {
   const cases: [string, JobCategory][] = [
@@ -16,6 +20,10 @@ describe("categorizeCompany", () => {
     ["Apple", "bigtech"],
     ["Waymo", "bigtech"],
     ["Robinhood", "bigtech"],
+    ["Coveo", "midtech"],
+    ["Ciena", "midtech"],
+    ["Autodesk", "midtech"],
+    ["BlackBerry", "midtech"],
     ["OpenAI", "ai"],
     ["Anthropic", "ai"],
     ["Cursor", "ai"],
@@ -107,6 +115,18 @@ describe("category metadata", () => {
 // (never "other"), so adding a firm without tagging it fails loudly here.
 describe("catalog category drift guard", () => {
   const catalog = [...API_COMPANIES.map((c) => c.name), ...BROWSER_COMPANIES.map((c) => c.name)];
+
+  it("uses the conservative browser scraper for Uber instead of its blocked API", () => {
+    expect(API_COMPANIES.some((company) => company.name === "Uber")).toBe(false);
+    expect(BROWSER_COMPANIES).toContainEqual(
+      expect.objectContaining({
+        name: "Uber",
+        system: "uber",
+        searchUrlUS: expect.stringContaining("search=intern"),
+      }),
+    );
+    expect(SCRAPABLE_BROWSER_SYSTEMS).toContain("uber");
+  });
 
   it.each(catalog)("%s resolves to a concrete category", (name) => {
     const category = categorizeCompany(name, "other");

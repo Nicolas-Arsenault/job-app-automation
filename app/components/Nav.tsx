@@ -8,6 +8,7 @@ import { useChromeExtensionStatus } from "./extension/useChromeExtensionStatus";
 const primaryLinks = [
   { href: "/", label: "Overview" },
   { href: "/jobs", label: "Jobs" },
+  { href: "/applications", label: "Applications" },
   { href: "/companies", label: "Companies" },
   { href: "/judge", label: "Judge" },
 ];

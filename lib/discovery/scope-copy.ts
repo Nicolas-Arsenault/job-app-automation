@@ -87,8 +87,8 @@ export function formatDiscoveryScope({
 
   const roles =
     roleTerms.length > 0
-      ? `Open roles matching ${formatList(roleTerms)}`
-      : "Open roles matching your saved role preferences";
+      ? `${config.internshipsOnly ? "Open internships" : "Open roles"} matching ${formatList(roleTerms)}`
+      : `${config.internshipsOnly ? "Open internships" : "Open roles"} matching your saved role preferences`;
   const locations =
     countryNames.length > 0
       ? `in ${formatList(countryNames)}`
@@ -97,9 +97,11 @@ export function formatDiscoveryScope({
   const degreeSentence = config.excludeAdvancedDegree
     ? "Roles that require an advanced degree are excluded"
     : "Advanced-degree requirements are allowed";
-  const internshipSentence = config.includeInternships
-    ? "Internships and co-ops are included"
-    : "Internships and co-ops are excluded";
+  const internshipSentence = config.internshipsOnly
+    ? "Only internships and co-ops are kept"
+    : config.includeInternships
+      ? "Internships and co-ops are included"
+      : "Internships and co-ops are excluded";
   const policySummary = `${experienceSentence(config.maxYoE)}. ${degreeSentence}. ${internshipSentence}.`;
 
   return {

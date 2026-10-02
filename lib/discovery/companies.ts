@@ -4,14 +4,14 @@
 //
 // The user asked to target ~42 specific big-tech / well-known / VC-backed
 // companies and find, for EACH, the exact web query that lists their currently
-// open entry-level software roles in the US and in Canada (kept separate).
+// open software internships in the US and in Canada (kept separate).
 //
 // Every entry below was probed LIVE (see scripts/verify-queries.ts,
 // `npm run discovery:verify`). Companies fall into two buckets:
 //
 //   method: "api"     -> a public JSON endpoint we can fetch directly. Country
 //                        separation is either a native request param
-//                        (Amazon / Uber / Netflix / Workday) or done by us via
+//                        (Amazon / Netflix / Workday) or done by us via
 //                        classifyCountry() on the returned location string
 //                        (Greenhouse / Lever / Ashby / Snap / Phenom).
 //
@@ -22,9 +22,9 @@
 //                        filtered where the site supports it) so the query is
 //                        pinned and confirmable.
 //
-// `queryTerms` are the software keywords we search each board with; the
-// entry-level / bachelor's / no-YoE narrowing is applied afterwards by
-// classifyEntryLevel() so the logic stays in one place.
+// `queryTerms` are the software fallback when internship-only mode is disabled.
+// In internship-only mode, searchable adapters use intern/co-op intent; ATSes
+// that expose a full board are fetched whole and filtered by classifyEntryLevel().
 
 export type DiscoveryMethod = "api";
 export type DiscoverySystem =
@@ -33,8 +33,8 @@ export type DiscoverySystem =
   | "ashby"
   | "workable"
   | "teamtailor"
+  | "smartrecruiters"
   | "amazon"
-  | "uber"
   | "netflix"
   | "snap"
   | "phenom"
@@ -43,10 +43,14 @@ export type DiscoverySystem =
   | "microsoft"
   | "githubboard"
   | "ycombinator"
+  | "watchlist"
+  | "eightfold"
+  | "oracle"
   | "workday";
 
 export type BrowserSystem =
   | "apple"
+  | "uber"
   | "tesla"
   | "google"
   | "deepmind"
@@ -59,8 +63,10 @@ export type BrowserSystem =
 // (lib/discovery/browser.ts). The rest render an entire card inside one anchor,
 // ignore their own location filter, or hard-block headless clients (Akamai /
 // PerimeterX), so we surface their pinned human search URL instead of scraping
-// unreliable data. Keep this in sync with RULES in browser.ts.
-export const SCRAPABLE_BROWSER_SYSTEMS: BrowserSystem[] = ["apple", "shopify"];
+// unreliable data. Uber's JSON API is Cloudflare-blocked, but its official
+// server-rendered search works conservatively in Playwright. Keep this in sync
+// with RULES in browser.ts.
+export const SCRAPABLE_BROWSER_SYSTEMS: BrowserSystem[] = ["apple", "uber", "shopify"];
 
 export interface ApiCompany {
   name: string;
@@ -75,9 +81,17 @@ export interface ApiCompany {
     site: string;
     /** Optional targeted searches used instead of queryTerms[0]. */
     searchTerms?: string[];
+    /** Native Workday facet ids, used when a board exposes an internship facet. */
+    appliedFacets?: Record<string, string[]>;
     /** Fetch each relevant job detail so experience requirements are available. */
     fetchDescriptions?: boolean;
+    /** Keep detail hydration gentle for large university-job result sets. */
+    detailConcurrency?: number;
   };
+  // Eightfold career portal public search API.
+  eightfold?: { host: string; domain: string };
+  // Oracle Recruiting Candidate Experience public REST API.
+  oracle?: { host: string; careerHost: string; site: string };
   // TalentBrew (Radancy) host, e.g. "jobs.intuit.com".
   talentbrew?: { host: string };
   // GitHub-hosted aggregator board. JSON boards use the shared listings schema;
@@ -94,6 +108,8 @@ export interface ApiCompany {
   // hiring YC companies. The runner resolves each company's ATS at scrape time
   // (see lib/discovery/yc.ts), so one entry covers hundreds of employers.
   yc?: { directoryUrl: string };
+  // User-configured company website expansion source.
+  watchlist?: true;
   // Does the endpoint filter US/CA server-side, or must we post-filter?
   countryFilter: "native" | "post";
   // Software keywords used to scope the query.
@@ -117,7 +133,7 @@ const SWE = ["software engineer", "software developer"];
 const SWE_BROAD = ["software engineer", "software developer", "machine learning", "devops"];
 
 // ---------------------------------------------------------------------------
-// API companies (93) — direct public JSON endpoints, verified live. Includes
+// API companies — direct public JSON endpoints, verified live. Includes
 // Canada-first and quant / trading blocks near the end.
 // ---------------------------------------------------------------------------
 
@@ -168,14 +184,26 @@ export const API_COMPANIES: ApiCompany[] = [
 
   // ---- Bespoke public JSON endpoints
   { name: "Amazon", method: "api", system: "amazon", countryFilter: "native", queryTerms: SWE },
-  { name: "Microsoft", method: "api", system: "microsoft", countryFilter: "native", queryTerms: SWE },
-  { name: "Uber", method: "api", system: "uber", countryFilter: "native", queryTerms: SWE },
+  { name: "Microsoft", method: "api", system: "microsoft", countryFilter: "native", queryTerms: ["intern"] },
   { name: "Netflix", method: "api", system: "netflix", countryFilter: "native", queryTerms: SWE },
   { name: "Snap", method: "api", system: "snap", countryFilter: "post", queryTerms: SWE },
   { name: "GitHub", method: "api", system: "phenom", token: "github.careers", countryFilter: "post", queryTerms: SWE },
   { name: "Rivian", method: "api", system: "phenom", token: "careers.rivian.com", countryFilter: "post", queryTerms: SWE },
   { name: "Spotify", method: "api", system: "spotify", countryFilter: "post", queryTerms: SWE },
   { name: "Intuit", method: "api", system: "talentbrew", countryFilter: "post", queryTerms: SWE, talentbrew: { host: "jobs.intuit.com" } },
+  { name: "Kinaxis", method: "api", system: "phenom", token: "join.kinaxis.com", countryFilter: "post", queryTerms: ["intern"] },
+
+  // ---- Eightfold public career search API
+  { name: "Autodesk", method: "api", system: "eightfold", countryFilter: "post", queryTerms: ["intern"], eightfold: { host: "jobs.autodesk.com", domain: "autodesk.com" } },
+  { name: "Ericsson", method: "api", system: "eightfold", countryFilter: "post", queryTerms: ["intern"], eightfold: { host: "jobs.ericsson.com", domain: "ericsson.com" } },
+
+  // ---- Oracle Recruiting Candidate Experience API
+  { name: "Nokia", method: "api", system: "oracle", countryFilter: "post", queryTerms: ["intern"], oracle: { host: "fa-evmr-saasfaprod1.fa.ocs.oraclecloud.com", careerHost: "jobs.nokia.com", site: "CX_1" } },
+
+  // ---- SmartRecruiters public Posting API
+  { name: "Ubisoft", method: "api", system: "smartrecruiters", token: "Ubisoft2", countryFilter: "native", queryTerms: SWE_BROAD },
+  { name: "Bosch", method: "api", system: "smartrecruiters", token: "BoschGroup", countryFilter: "native", queryTerms: SWE_BROAD },
+  { name: "Visa", method: "api", system: "smartrecruiters", token: "Visa", countryFilter: "native", queryTerms: SWE_BROAD },
 
   // ---- Workday CXS: POST https://<host>/wday/cxs/<tenant>/<site>/jobs
   { name: "NVIDIA", method: "api", system: "workday", countryFilter: "post", queryTerms: SWE, workday: { host: "nvidia.wd5.myworkdayjobs.com", tenant: "nvidia", site: "NVIDIAExternalCareerSite" } },
@@ -192,16 +220,26 @@ export const API_COMPANIES: ApiCompany[] = [
       host: "cisco.wd5.myworkdayjobs.com",
       tenant: "cisco",
       site: "Cisco_Careers",
-      searchTerms: ["new grad"],
+      // Cisco's text search is fuzzy enough that "intern" returns hundreds of
+      // unrelated jobs. This is the board's native Intern worker-subtype facet.
+      searchTerms: [""],
+      appliedFacets: {
+        workerSubType: ["a5e1942e7b2c01c6907030106001b700"],
+      },
       fetchDescriptions: true,
+      detailConcurrency: 2,
     },
   },
+  { name: "Ciena", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "ciena.wd5.myworkdayjobs.com", tenant: "ciena", site: "Careers", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
+  { name: "Clio", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "clio.wd3.myworkdayjobs.com", tenant: "clio", site: "ClioCareerSite", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
+  { name: "BlackBerry", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "bb.wd3.myworkdayjobs.com", tenant: "bb", site: "BlackBerry", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true } },
 
   // ---- Canada-first technology companies. The Quebec cohort covers Montreal,
   // Quebec City, Sherbrooke, and other provincial offices exposed by each board.
   { name: "Behaviour Interactive", method: "api", system: "lever", token: "bhvr", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "TrackTik", method: "api", system: "lever", token: "tracktik", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "AlayaCare", method: "api", system: "greenhouse", token: "alayacare", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Coveo", method: "api", system: "greenhouse", token: "coveoen", countryFilter: "post", queryTerms: ["intern"] },
   { name: "Ada", method: "api", system: "greenhouse", token: "ada18", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "League", method: "api", system: "greenhouse", token: "leagueinc", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Hootsuite", method: "api", system: "greenhouse", token: "hootsuite", countryFilter: "post", queryTerms: SWE_BROAD },
@@ -247,33 +285,39 @@ export const API_COMPANIES: ApiCompany[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Browser companies (8) — no usable public JSON API, need Playwright at scrape
+// Browser companies — no usable public JSON API, need Playwright at scrape
 // time. URLs are pinned & confirmable in a browser.
 // ---------------------------------------------------------------------------
 
 export const BROWSER_COMPANIES: BrowserCompany[] = [
   {
     name: "Apple", method: "browser", system: "apple",
-    searchUrlUS: "https://jobs.apple.com/en-us/search?location=united-states-USA&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
-    searchUrlCA: "https://jobs.apple.com/en-ca/search?location=canada-CANC&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
+    searchUrlUS: "https://jobs.apple.com/en-us/search?search=intern&location=united-states-USA&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
+    searchUrlCA: "https://jobs.apple.com/en-ca/search?search=intern&location=canada-CANC&team=apps-and-frameworks-SFTWR-AF,cloud-and-infrastructure-SFTWR-CLD,core-operating-systems-SFTWR-COS",
     reason: "role/search API requires a CSRF token + session cookie; empty on plain fetch.",
   },
   {
+    name: "Uber", method: "browser", system: "uber",
+    searchUrlUS: "https://jobs.uber.com/en/jobs/?search=intern&radius=100",
+    searchUrlCA: "https://jobs.uber.com/en/jobs/?search=intern&radius=100",
+    reason: "the direct jobs API is Cloudflare-blocked; Playwright reads the official, server-rendered internship search sequentially.",
+  },
+  {
     name: "Tesla", method: "browser", system: "tesla",
-    searchUrlUS: "https://www.tesla.com/careers/search/?query=software&region=5&type=3",
-    searchUrlCA: "https://www.tesla.com/careers/search/?query=software&region=4",
+    searchUrlUS: "https://www.tesla.com/careers/search/?query=software%20intern&region=5&type=3",
+    searchUrlCA: "https://www.tesla.com/careers/search/?query=software%20intern&region=4&type=3",
     reason: "cua-api is Akamai-protected (Access Denied to non-browser clients).",
   },
   {
     name: "Google", method: "browser", system: "google",
-    searchUrlUS: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20engineer&target_level=EARLY&target_level=INTERN_AND_APPRENTICE&location=United%20States",
-    searchUrlCA: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20engineer&target_level=EARLY&target_level=INTERN_AND_APPRENTICE&location=Canada",
+    searchUrlUS: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20intern&target_level=INTERN_AND_APPRENTICE&location=United%20States",
+    searchUrlCA: "https://www.google.com/about/careers/applications/jobs/results/?q=software%20intern&target_level=INTERN_AND_APPRENTICE&location=Canada",
     reason: "public Cloud Talent API retired; results are client-rendered behind an internal endpoint.",
   },
   {
     name: "DeepMind", method: "browser", system: "deepmind",
-    searchUrlUS: "https://deepmind.google/about/careers/#/?location=United%20States&search=software%20engineer",
-    searchUrlCA: "https://deepmind.google/about/careers/#/?location=Canada&search=software%20engineer",
+    searchUrlUS: "https://deepmind.google/about/careers/#/?location=United%20States&search=intern",
+    searchUrlCA: "https://deepmind.google/about/careers/#/?location=Canada&search=intern",
     reason: "careers board is a client-rendered SPA sharing Google's non-public backend.",
   },
   {
@@ -284,14 +328,14 @@ export const BROWSER_COMPANIES: BrowserCompany[] = [
   },
   {
     name: "Meta", method: "browser", system: "meta",
-    searchUrlUS: "https://www.metacareers.com/jobs?q=software%20engineer&offices[0]=United%20States&roles[0]=Individual%20Contributor",
-    searchUrlCA: "https://www.metacareers.com/jobs?q=software%20engineer&offices[0]=Canada&roles[0]=Individual%20Contributor",
+    searchUrlUS: "https://www.metacareers.com/jobs?q=software%20intern&offices[0]=United%20States&roles[0]=Internship",
+    searchUrlCA: "https://www.metacareers.com/jobs?q=software%20intern&offices[0]=Canada&roles[0]=Internship",
     reason: "metacareers uses a fragile GraphQL backend with request signing; not a stable public API.",
   },
   {
     name: "LinkedIn", method: "browser", system: "linkedin",
-    searchUrlUS: "https://www.linkedin.com/jobs/search/?keywords=software%20engineer&f_E=1%2C2&location=United%20States&f_C=1337",
-    searchUrlCA: "https://www.linkedin.com/jobs/search/?keywords=software%20engineer&f_E=1%2C2&location=Canada&f_C=1337",
+    searchUrlUS: "https://www.linkedin.com/jobs/search/?keywords=software%20intern&f_E=1&location=United%20States&f_C=1337",
+    searchUrlCA: "https://www.linkedin.com/jobs/search/?keywords=software%20intern&f_E=1&location=Canada&f_C=1337",
     reason: "guest voyager API is rate-limited & auth-gated; needs a browser session.",
   },
   {
@@ -305,7 +349,7 @@ export const BROWSER_COMPANIES: BrowserCompany[] = [
 export const ALL_COMPANIES: DiscoveryCompany[] = [...API_COMPANIES, ...BROWSER_COMPANIES];
 
 // ---------------------------------------------------------------------------
-// GitHub aggregator boards — community-maintained new-grad job feeds published
+// GitHub aggregator boards — community-maintained internship feeds published
 // as a raw listings.json. Each row carries its own employer, so one board
 // covers hundreds of companies (a long tail beyond our named list). They run
 // AFTER the company sites so cross-source dedup keeps the richer native listing
@@ -314,43 +358,16 @@ export const ALL_COMPANIES: DiscoveryCompany[] = [...API_COMPANIES, ...BROWSER_C
 
 export const BOARD_SOURCES: ApiCompany[] = [
   {
-    name: "SimplifyJobs New-Grad",
+    name: "SimplifyJobs Summer 2027 Internships",
     method: "api",
     system: "githubboard",
     countryFilter: "post",
     queryTerms: SWE,
     board: {
       owner: "SimplifyJobs",
-      repo: "New-Grad-Positions",
+      repo: "Summer2027-Internships",
       ref: "dev",
       path: ".github/scripts/listings.json",
-    },
-  },
-  {
-    name: "vanshb03 New-Grad-2026",
-    method: "api",
-    system: "githubboard",
-    countryFilter: "post",
-    queryTerms: SWE,
-    board: {
-      owner: "vanshb03",
-      repo: "New-Grad-2026",
-      ref: "main",
-      path: ".github/scripts/listings.json",
-    },
-  },
-  {
-    name: "Canada New-Grad 2026",
-    method: "api",
-    system: "githubboard",
-    countryFilter: "post",
-    queryTerms: SWE,
-    board: {
-      owner: "JeelTikiwala",
-      repo: "New-Grad-2026",
-      ref: "main",
-      path: "README.md",
-      format: "markdown",
     },
   },
   {
@@ -398,7 +415,21 @@ export const YC_SOURCE: ApiCompany = {
   yc: { directoryUrl: "https://yc-oss.github.io/api/companies/hiring.json" },
 };
 
+export const WATCHLIST_SOURCE: ApiCompany = {
+  name: "Company watchlist",
+  method: "api",
+  system: "watchlist",
+  countryFilter: "post",
+  queryTerms: SWE_BROAD,
+  watchlist: true,
+};
+
 // The full set the discovery runner iterates: named company APIs first, then the
 // aggregator sources (YC expansion, then GitHub boards) so dupes of already-
 // covered roles are suppressed in favor of the richer native listing.
-export const DISCOVERY_SOURCES: ApiCompany[] = [...API_COMPANIES, YC_SOURCE, ...BOARD_SOURCES];
+export const DISCOVERY_SOURCES: ApiCompany[] = [
+  ...API_COMPANIES,
+  YC_SOURCE,
+  WATCHLIST_SOURCE,
+  ...BOARD_SOURCES,
+];

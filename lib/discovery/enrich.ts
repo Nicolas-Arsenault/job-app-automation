@@ -344,11 +344,13 @@ export function classifySponsorship(input: {
   }
   if (
     /(not|no|unable to|will not|does not|cannot|can not|do not)\b[^.]{0,40}sponsor|sponsorship (is )?not (available|offered|provided)|without (visa )?sponsorship|no visa sponsorship/.test(t)
+    || /(?:not|ineligible|unable)\b[^.]{0,35}(?:j-?1|exchange visitor)|(?:j-?1|exchange visitor)\b[^.]{0,35}(?:not supported|not available|ineligible)/.test(t)
   ) {
     return "none";
   }
   if (
     /(will|can|offer|provide|able to)\b[^.]{0,30}sponsor|visa sponsorship (is )?(available|offered|provided|supported)|open to sponsor/.test(t)
+    || /(?:j-?1|exchange visitor)\b[^.]{0,35}(?:sponsorship|visa assistance)\b[^.]{0,20}(?:available|offered|provided|supported|eligible)|eligible (?:for|to receive)\b[^.]{0,20}j-?1|j-?1 candidates? (?:are )?welcome/.test(t)
   ) {
     return "offers";
   }

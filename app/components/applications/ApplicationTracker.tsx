@@ -1,0 +1,383 @@
+"use client";
+
+import Link from "next/link";
+import { type FormEvent, useMemo, useState } from "react";
+import { CompanyLogo } from "../CompanyLogo";
+import { AppliedBadge, cls } from "../ui";
+import type { ApplicationStatus } from "../jobs/types";
+
+export type TrackedApplicationStatus = Extract<
+  ApplicationStatus,
+  "applied" | "interviewing" | "offer" | "rejected"
+>;
+
+export interface TrackedApplication {
+  id: string;
+  title: string;
+  company: string;
+  location: string | null;
+  country: string | null;
+  applyUrl: string;
+  applicationStatus: TrackedApplicationStatus;
+  appliedAt: string | null;
+  availabilityStatus: string;
+  closedAt: string | null;
+}
+
+const STAGES: { value: TrackedApplicationStatus; label: string }[] = [
+  { value: "applied", label: "Applied" },
+  { value: "interviewing", label: "Interviewing" },
+  { value: "offer", label: "Offer" },
+  { value: "rejected", label: "Rejected" },
+];
+
+type StageFilter = "all" | TrackedApplicationStatus;
+
+function todayForInput(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "Date unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value));
+}
+
+export function ApplicationTracker({
+  initialApplications,
+}: {
+  initialApplications: TrackedApplication[];
+}) {
+  const [applications, setApplications] = useState(initialApplications);
+  const [filter, setFilter] = useState<StageFilter>("all");
+  const [updatingIds, setUpdatingIds] = useState<Set<string>>(() => new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [manualApplication, setManualApplication] = useState({
+    title: "",
+    company: "",
+    applyUrl: "",
+    location: "",
+    country: "" as "" | "US" | "CA" | "OTHER",
+    applicationStatus: "applied" as TrackedApplicationStatus,
+    appliedDate: todayForInput(),
+  });
+
+  const counts = useMemo(() => {
+    const result: Record<TrackedApplicationStatus, number> = {
+      applied: 0,
+      interviewing: 0,
+      offer: 0,
+      rejected: 0,
+    };
+    for (const application of applications) result[application.applicationStatus]++;
+    return result;
+  }, [applications]);
+
+  const visibleApplications =
+    filter === "all"
+      ? applications
+      : applications.filter((application) => application.applicationStatus === filter);
+
+  async function updateStatus(
+    application: TrackedApplication,
+    status: TrackedApplicationStatus,
+  ) {
+    if (status === application.applicationStatus) return;
+    const previousStatus = application.applicationStatus;
+    setError(null);
+    setUpdatingIds((current) => new Set(current).add(application.id));
+    setApplications((current) =>
+      current.map((item) =>
+        item.id === application.id ? { ...item, applicationStatus: status } : item,
+      ),
+    );
+
+    try {
+      const response = await fetch(`/api/jobs/${application.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationStatus: status }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error || `Update failed (${response.status})`);
+      }
+    } catch (caught) {
+      setApplications((current) =>
+        current.map((item) =>
+          item.id === application.id
+            ? { ...item, applicationStatus: previousStatus }
+            : item,
+        ),
+      );
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setUpdatingIds((current) => {
+        const next = new Set(current);
+        next.delete(application.id);
+        return next;
+      });
+    }
+  }
+
+  async function addApplication(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAdding(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...manualApplication,
+          country: manualApplication.country || undefined,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { application?: TrackedApplication; error?: string }
+        | null;
+      if (!response.ok || !payload?.application) {
+        throw new Error(payload?.error || `Add failed (${response.status})`);
+      }
+      setApplications((current) => [
+        payload.application!,
+        ...current.filter((item) => item.id !== payload.application!.id),
+      ]);
+      setFilter("all");
+      setShowAddForm(false);
+      setManualApplication({
+        title: "",
+        company: "",
+        applyUrl: "",
+        location: "",
+        country: "",
+        applicationStatus: "applied",
+        appliedDate: todayForInput(),
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="mb-5 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowAddForm((shown) => !shown)}
+          className={cls.btnPrimary}
+        >
+          {showAddForm ? "Cancel" : "+ Add application"}
+        </button>
+      </div>
+
+      {showAddForm && (
+        <form onSubmit={addApplication} className={`${cls.card} mb-5`}>
+          <h2 className="text-lg font-semibold">Add an application</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            If this job is already in discovery, it will be marked applied instead of duplicated.
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium">
+              Company
+              <input
+                required
+                maxLength={160}
+                value={manualApplication.company}
+                onChange={(event) => setManualApplication((current) => ({ ...current, company: event.target.value }))}
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Role title
+              <input
+                required
+                maxLength={200}
+                value={manualApplication.title}
+                onChange={(event) => setManualApplication((current) => ({ ...current, title: event.target.value }))}
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium md:col-span-2">
+              Job posting URL
+              <input
+                required
+                type="url"
+                value={manualApplication.applyUrl}
+                onChange={(event) => setManualApplication((current) => ({ ...current, applyUrl: event.target.value }))}
+                placeholder="https://company.com/jobs/..."
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Location <span className="font-normal text-gray-500">(optional)</span>
+              <input
+                maxLength={200}
+                value={manualApplication.location}
+                onChange={(event) => setManualApplication((current) => ({ ...current, location: event.target.value }))}
+                placeholder="Toronto, Ontario"
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Country
+              <select
+                value={manualApplication.country}
+                onChange={(event) => setManualApplication((current) => ({ ...current, country: event.target.value as typeof current.country }))}
+                className={`${cls.input} mt-1 w-full`}
+              >
+                <option value="">Detect from location</option>
+                <option value="CA">Canada</option>
+                <option value="US">United States</option>
+                <option value="OTHER">Other / unknown</option>
+              </select>
+            </label>
+            <label className="text-sm font-medium">
+              Applied date
+              <input
+                required
+                type="date"
+                value={manualApplication.appliedDate}
+                onChange={(event) => setManualApplication((current) => ({ ...current, appliedDate: event.target.value }))}
+                className={`${cls.input} mt-1 w-full`}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Stage
+              <select
+                value={manualApplication.applicationStatus}
+                onChange={(event) => setManualApplication((current) => ({ ...current, applicationStatus: event.target.value as TrackedApplicationStatus }))}
+                className={`${cls.input} mt-1 w-full`}
+              >
+                {STAGES.map((stage) => (
+                  <option key={stage.value} value={stage.value}>{stage.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button type="submit" disabled={adding} className={`${cls.btnPrimary} mt-4 disabled:opacity-60`}>
+            {adding ? "Adding…" : "Add application"}
+          </button>
+        </form>
+      )}
+
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <button
+          type="button"
+          onClick={() => setFilter("all")}
+          className={`${cls.card} text-left transition-colors ${
+            filter === "all" ? "ring-2 ring-indigo-500" : "hover:border-indigo-300"
+          }`}
+        >
+          <span className="text-xs text-gray-500 dark:text-gray-400">All</span>
+          <span className="mt-1 block text-2xl font-bold">{applications.length}</span>
+        </button>
+        {STAGES.map((stage) => (
+          <button
+            key={stage.value}
+            type="button"
+            onClick={() => setFilter(stage.value)}
+            className={`${cls.card} text-left transition-colors ${
+              filter === stage.value
+                ? "ring-2 ring-indigo-500"
+                : "hover:border-indigo-300"
+            }`}
+          >
+            <span className="text-xs text-gray-500 dark:text-gray-400">{stage.label}</span>
+            <span className="mt-1 block text-2xl font-bold">{counts[stage.value]}</span>
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          Could not update application: {error}
+        </p>
+      )}
+
+      {visibleApplications.length === 0 ? (
+        <div className={`${cls.card} text-center`}>
+          <p className="font-medium">No applications in this stage.</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Mark a role as applied from Jobs, or add an application yourself.
+          </p>
+          <Link href="/jobs" className="mt-4 inline-block text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-300">
+            Browse jobs
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {visibleApplications.map((application) => {
+            const updating = updatingIds.has(application.id);
+            const closed = application.availabilityStatus === "closed";
+            return (
+              <article key={application.id} className={`${cls.card} flex flex-wrap items-center gap-3`}>
+                <CompanyLogo company={application.company} size={40} />
+                <div className="min-w-[220px] flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={application.applyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-gray-950 hover:text-indigo-600 hover:underline dark:text-gray-100 dark:hover:text-indigo-300"
+                    >
+                      {application.title}
+                    </a>
+                    <AppliedBadge status={application.applicationStatus} />
+                    {closed && (
+                      <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-100">
+                        Posting closed
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                    <span className="font-medium">{application.company}</span>
+                    {application.location ? ` · ${application.location}` : ""}
+                    {application.country ? ` · ${application.country}` : ""}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Applied {formatDate(application.appliedAt)}
+                    {closed && application.closedAt
+                      ? ` · posting closed ${formatDate(application.closedAt)}`
+                      : ""}
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  Stage
+                  <select
+                    value={application.applicationStatus}
+                    disabled={updating}
+                    onChange={(event) =>
+                      void updateStatus(
+                        application,
+                        event.target.value as TrackedApplicationStatus,
+                      )
+                    }
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900"
+                  >
+                    {STAGES.map((stage) => (
+                      <option key={stage.value} value={stage.value}>
+                        {stage.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}

@@ -1,14 +1,15 @@
 # Job Application Pipeline
 
-A local-first pipeline that **discovers currently-open entry-level software roles**
-(SWE, DevOps, ML, and related) at 90+ big-tech / Canadian / well-known / VC-backed companies and
+A local-first pipeline that **discovers currently-open software internships and co-ops**
+(SWE, DevOps, ML, and related) at 95+ big-tech / Canadian / well-known / VC-backed companies and
 surfaces them in a dashboard as two separate queues — **United States** and **Canada** —
 sorted newest-first with date filters. Each card links straight to the real posting; you
 apply yourself, or optionally launch a local Chrome extension that fills known fields and
 highlights anything needing your answer. Nothing is submitted automatically.
 
-The queue targets roles that are **entry-level or ask for ≤ 2 years of experience**, at
-**bachelor's-degree-or-below** level (Masters/PhD-required roles are filtered out).
+The default queue is **internship-only**, at bachelor's-degree-or-below level
+(Masters/PhD-required roles are filtered out). Settings can restore the broader historical
+entry-level / ≤2-years-of-experience scope.
 
 > **Focus:** discovery remains the core workflow. The optional local Chrome extension assists
 > with form filling only after you open a posting; it never submits. On top of discovery the
@@ -24,17 +25,17 @@ The queue targets roles that are **entry-level or ask for ≤ 2 years of experie
 
 ## Discovery pipeline
 
-Postings are pulled directly from each company's careers backend. 90+ companies expose a
-usable public feed (Greenhouse, Ashby, Lever, Workable, Teamtailor, Amazon, Uber, Netflix,
+Postings are pulled directly from each company's careers backend. 95+ companies expose a
+usable public feed (Greenhouse, Ashby, Lever, SmartRecruiters, Workable, Teamtailor, Amazon, Netflix,
 Snap, Phenom, Spotify, Workday CXS) — including a Canada-first cohort concentrated in
 Montreal and Quebec (Genetec, Behaviour Interactive, TrackTik, AlayaCare, Hopper, Nuvei,
 Vention) and a block of quant / high-frequency trading firms (Jane
 Street, Point72, Optiver, Jump, IMC, Tower Research, Squarepoint, Qube, WorldQuant, AQR,
 DRW, HRT…) — and are fetched server-side; the rest are client-rendered or bot-gated and
-are either scraped with Playwright (Apple and Shopify) or surfaced via a pinned search URL.
+are either scraped with Playwright (Apple, Uber, and Shopify) or surfaced via a pinned search URL.
 
 ```bash
-# Fetch fresh US/CA entry-level roles from every API company (deduped upsert)
+# Fetch fresh US/CA software internships from every API company (deduped upsert)
 npm run discover
 
 # Only specific companies
@@ -50,7 +51,7 @@ npm run discover:browser
 npm run discovery:verify
 ```
 
-Roles are filtered to US/Canada and classified as entry-level up front, then upserted into
+Roles are filtered to US/Canada and classified as software internships up front, then upserted into
 the `Job` table deduped by `system:externalId` (or a content fingerprint). Browse them on
 the **Jobs** page (US / CA tabs) and see coverage on the **Companies** page.
 
@@ -101,13 +102,28 @@ If a direct source sees the same requisition again, that row reopens instead of 
 
 ## Features
 
-- **Company-site discovery** — 90+ public-feed companies (including Canada-first and
-  quant / HFT firms) + Playwright scraping for Apple and Shopify, plus five community
-  GitHub boards including Canada-specific new-grad and internship feeds for the long tail
+- **Company-site discovery** — 95+ public-feed companies (including Canada-first and
+  quant / HFT firms) + Playwright scraping for Apple and Shopify, plus three internship-only
+  community GitHub boards including a Canada-specific feed for the long tail
   of employers. See [Discovery pipeline](#discovery-pipeline).
 - **Two separate queues** — US and Canada, newest-first, with last-24h / 7d / 30d filters.
 - **Rate-safe dashboard refreshes** — the shared scrape control enforces a durable two-hour
   cooldown and shows a live countdown before the next run can start.
+- **Two-hour scheduled discovery** — `npm run cron` runs the same active discovery,
+  reconciliation and Judge pipeline at minute 17 every two hours, skips overlapping cycles, and
+  does not consume the manual refresh cooldown. Startup scans are disabled by default so worker
+  restarts cannot create request bursts.
+- **Discord alerts** — set a local `DISCORD_WEBHOOK_URL` to receive batched alerts for genuinely
+  new internships first seen in the completed run. Existing rows are never backfilled and fit score
+  does not affect notification eligibility.
+  Alerts also require a source-provided posting time within `DISCORD_MAX_POST_AGE_MINUTES` (120 by
+  default). Canadian roles are unrestricted; US roles marked no-sponsorship or citizenship/clearance
+  required are suppressed, while explicit sponsorship and unstated/unknown cases remain eligible.
+  Jobs already marked applied, interviewing, offer, or rejected are also suppressed.
+- **Change-aware GitHub boards** — ETag / Last-Modified validators avoid re-downloading unchanged
+  community feeds while cached content safely refreshes sightings.
+- **Company watchlist expansion** — add `Company | website` rows in Settings; the app resolves
+  public Greenhouse, Lever, Ashby, or SmartRecruiters boards and polls the original ATS directly.
 - **Evidence-based availability** — incomplete runs cannot close jobs; missing postings are
   rechecked, confirmed closures are archived rather than deleted, and reappearing requisitions
   reopen with their saved/applied history intact.
@@ -197,7 +213,7 @@ npm run db:generate
 # 4. (optional) Seed the source catalog + a demo profile/criteria
 npm run db:seed
 
-# 5. Discover fresh US/CA entry-level roles (hits live public career APIs)
+# 5. Discover fresh US/CA software internships (hits live public career APIs)
 npm run discover
 
 # 6. (optional) Playwright-scrape Apple
@@ -311,7 +327,7 @@ aggregator that links to a Greenhouse board) collapse into one canonical job.
 
 ### Company catalog (seeded by default)
 
-`npm run db:seed` wires up a curated catalog of **70+ companies** that hire in the
+The active discovery catalog includes **95+ companies** that hire in the
 US/Canada and use easy-apply ATSes — big tech (Airbnb, Roblox, Waymo…), known
 scale-ups (Stripe, Databricks, Figma, OpenAI, Notion…), and startups backed by
 **Y Combinator / a16z / Greylock** (Ramp, Vanta, Cursor, Harvey, Vercel…). Every
@@ -396,15 +412,15 @@ Nothing about *what* to scrape is hardcoded. A single `DiscoveryConfig` record (
 the **Settings** page, read by the runner) drives every run:
 
 - **Countries** to bucket postings into (US and CA out of the box).
-- **Maximum required years of experience**, **exclude advanced-degree** and **include
-  internships** gates — the entry-level classifier reads these instead of fixed constants.
+- **Internships only** is the default hard gate; the broader **include internships**,
+  maximum-experience, and advanced-degree controls remain configurable.
 - **Role keywords / excluded title keywords** to widen or narrow what counts.
 - **Scraper query terms** handed to each source, and **per-source enable/disable**.
+- **Company watchlist** entries (`Company | website`) discover supported public ATS boards
+  outside the static catalog and cache the resolution.
 - **Golden jobs** — an enable switch plus separate title keywords and precise description
   phrases. Matching is case- and punctuation-insensitive with whole normalized phrases.
-  Defaults include `new grad`, related graduate wording, and title/intent-specific `2027`
-  signals. Description defaults intentionally omit generic `graduate` and bare `2027`, so
-  ordinary requirements such as `undergraduate degree` or incidental years do not qualify.
+  Defaults prioritize software internship/co-op titles and precise 2027 internship phrases.
 
 `lib/discovery/config.ts` (`getDiscoveryConfig` / `saveDiscoveryConfig` /
 `toEntryLevelOptions`) is the backbone; `GET|PUT /api/config` is the editor API.
@@ -559,7 +575,8 @@ warm-intro tagging — see [Warm intros](#warm-intros-linkedin-connections).
 ## Scheduled scanning
 
 ```bash
-npm run cron     # runs on SCAN_CRON (default: every 30 min), scans immediately on start
+npm run cron     # runs on SCAN_CRON (default: every two hours at :17); startup scan is opt-in
+npm run discord:test  # sends one safe connectivity message when DISCORD_WEBHOOK_URL is set
 ```
 
 The cron process only **discovers and scores** jobs — it never submits. Submission
@@ -668,7 +685,7 @@ e2e/                 Playwright specs (smoke, queue, discovery, jobs-actions, ex
 - Prefers **official ATS APIs** over scraping.
 - **Workday stays human-controlled.** The extension may fill recognized mandatory fields,
   but never creates accounts, solves CAPTCHAs, advances pages, or submits applications.
-- **Discord (deferred):** scraping a Discord channel you're only a member of would require
+- **Discord channels as data sources remain deferred:** scraping a channel you're only a member of would require
   either an official bot (which you can't add) or a self-bot (against Discord's ToS), so
   it's intentionally left out. If a channel republishes an upstream feed, add that feed as
   an `rss`/`json`/`github-repo` source instead.

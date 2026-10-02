@@ -8,9 +8,14 @@
 // are handled by lib/discovery/browser.ts (Playwright).
 
 import { classifyCountry, isSoftwareRole, type Country } from "./entryLevel";
+import { createHash } from "node:crypto";
 import type { ApiCompany, DiscoverySystem, BrowserSystem } from "./companies";
 import { prisma } from "../db";
-import { DEFAULT_YC_CONFIG, type YcConfig } from "./config";
+import {
+  DEFAULT_YC_CONFIG,
+  type WatchedCompany,
+  type YcConfig,
+} from "./config";
 import {
   YC_DIRECTORY_URL,
   selectYcCompanies,
@@ -141,6 +146,66 @@ async function fetchText(url: string, timeoutMs = 8000): Promise<string> {
   }
 }
 
+async function fetchConditionallyCachedText(
+  key: string,
+  url: string,
+  timeoutMs = 30000,
+): Promise<string> {
+  const cached = await prisma.discoveryHttpCache.findUnique({ where: { key } });
+  const headers: Record<string, string> = {
+    "User-Agent": UA,
+    Accept: "application/json,text/plain,*/*",
+  };
+  if (cached?.etag) headers["If-None-Match"] = cached.etag;
+  if (cached?.lastModified) headers["If-Modified-Since"] = cached.lastModified;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    let response = await fetch(url, { headers, redirect: "follow", signal: ctrl.signal });
+    if (response.status === 304 && cached) {
+      await prisma.discoveryHttpCache.update({
+        where: { key },
+        data: { lastCheckedAt: new Date() },
+      });
+      return cached.body;
+    }
+    // A validator without its cached body is unusable. Retry once without it.
+    if (response.status === 304) {
+      response = await fetch(url, {
+        headers: { "User-Agent": UA, Accept: headers.Accept },
+        redirect: "follow",
+        signal: ctrl.signal,
+      });
+    }
+    if (!response.ok) {
+      throw new FetchHttpError(response.status, response.headers.get("retry-after"));
+    }
+    const body = await response.text();
+    await prisma.discoveryHttpCache.upsert({
+      where: { key },
+      create: {
+        key,
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+        contentType: response.headers.get("content-type"),
+        body,
+        lastCheckedAt: new Date(),
+      },
+      update: {
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+        contentType: response.headers.get("content-type"),
+        body,
+        lastCheckedAt: new Date(),
+      },
+    });
+    return body;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function stripHtml(s: string | undefined | null): string {
   if (!s) return "";
   return decodeEntities(s.replace(/<[^>]+>/g, " "))
@@ -206,6 +271,19 @@ const mk = (
   system,
   country: classifyCountry(p.location),
 });
+
+// Searchable career APIs need internship intent at the request layer. The
+// downstream classifier is still authoritative, but it cannot recover an
+// internship that a broad software/full-time query never returned.
+const INTERNSHIP_SEARCH_TERMS = ["intern", "co-op"];
+
+function searchTerms(c: ApiCompany, ctx: FetchContext): string[] {
+  return ctx.internshipsOnly ? INTERNSHIP_SEARCH_TERMS : c.queryTerms;
+}
+
+function primarySearchTerm(c: ApiCompany, ctx: FetchContext): string {
+  return searchTerms(c, ctx)[0] ?? c.queryTerms[0] ?? "";
+}
 
 // --------------------------------- Greenhouse ---------------------------------
 
@@ -504,121 +582,44 @@ async function teamtailor(c: ApiCompany): Promise<DiscoveryPosting[]> {
 
 // ----------------------------------- Amazon -----------------------------------
 
-async function amazon(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function amazon(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const out: DiscoveryPosting[] = [];
-  const q = c.queryTerms[0];
-  for (const country of ["USA", "CAN"] as const) {
-    for (let offset = 0; offset < 300; offset += 100) {
-      const url =
-        `https://www.amazon.jobs/en/search.json?base_query=${encodeURIComponent(q)}` +
-        `&normalized_country_code[]=${country}&result_limit=100&offset=${offset}`;
-      const data = (await fetchJson(url)) as {
-        jobs?: {
-          id_icims?: string;
-          title?: string;
-          normalized_location?: string;
-          job_path?: string;
-          posted_date?: string;
-          basic_qualifications?: string;
-        }[];
-      };
-      const jobs = data.jobs ?? [];
-      for (const j of jobs) {
-        out.push(
-          mk("amazon", c.name, {
-            title: j.title ?? "",
-            location: j.normalized_location ?? country,
-            applyUrl: j.job_path ? `https://www.amazon.jobs${j.job_path}` : "",
-            externalId: String(j.id_icims ?? ""),
-            description: stripHtml(j.basic_qualifications),
-            postedAt: toDate(j.posted_date),
-          }),
-        );
+  const seen = new Set<string>();
+  for (const q of searchTerms(c, ctx)) {
+    for (const country of ["USA", "CAN"] as const) {
+      for (let offset = 0; offset < 300; offset += 100) {
+        const url =
+          `https://www.amazon.jobs/en/search.json?base_query=${encodeURIComponent(q)}` +
+          `&normalized_country_code[]=${country}&result_limit=100&offset=${offset}`;
+        const data = (await fetchJson(url)) as {
+          jobs?: {
+            id_icims?: string;
+            title?: string;
+            normalized_location?: string;
+            job_path?: string;
+            posted_date?: string;
+            basic_qualifications?: string;
+          }[];
+        };
+        const jobs = data.jobs ?? [];
+        for (const j of jobs) {
+          const key = String(j.id_icims ?? j.job_path ?? "");
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          out.push(
+            mk("amazon", c.name, {
+              title: j.title ?? "",
+              location: j.normalized_location ?? country,
+              applyUrl: j.job_path ? `https://www.amazon.jobs${j.job_path}` : "",
+              externalId: String(j.id_icims ?? ""),
+              description: stripHtml(j.basic_qualifications),
+              postedAt: toDate(j.posted_date),
+            }),
+          );
+        }
+        if (jobs.length < 100) break;
       }
-      if (jobs.length < 100) break;
     }
-  }
-  return out;
-}
-
-// ------------------------------------ Uber ------------------------------------
-
-interface UberJob {
-  Id?: string;
-  Title?: string;
-  Description?: string;
-  DisplayDate?: string;
-  Locations?: {
-    City?: string;
-    Region?: string;
-    Country?: string;
-  }[];
-  Urls?: {
-    Url?: string;
-    IsDefault?: boolean;
-  }[];
-}
-
-async function uber(c: ApiCompany): Promise<DiscoveryPosting[]> {
-  const base = "https://jobs.uber.com";
-  const out: DiscoveryPosting[] = [];
-  const q = c.queryTerms[0];
-  const url = `${base}/api/jobs/search?query=${encodeURIComponent(q)}`;
-  let raw: unknown;
-  try {
-    raw = await fetchJson(url);
-  } catch (error) {
-    if (
-      !(error instanceof FetchHttpError) ||
-      (error.status !== 429 && error.status < 500)
-    ) {
-      throw error;
-    }
-    await wait(
-      Math.min(10_000, Math.max(1_000, error.retryAfterMs ?? 3_000)),
-    );
-    raw = await fetchJson(url);
-  }
-
-  const jobs =
-    raw && typeof raw === "object" && "jobs" in raw
-      ? (raw as { jobs?: unknown }).jobs
-      : undefined;
-  if (!Array.isArray(jobs)) {
-    throw new Error("Uber response did not contain a jobs array");
-  }
-  const validJobs = requireValidPostingRows(
-    "Uber",
-    jobs as UberJob[],
-    (job) => isNonEmptyString(job.Id) && isNonEmptyString(job.Title),
-  );
-  for (const job of validJobs) {
-    const location = job.Locations?.[0];
-    const locationText = [
-      location?.City,
-      location?.Region,
-      location?.Country,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    const path = job.Urls?.find((candidate) => candidate.IsDefault)?.Url;
-    const applyUrl = path && /^https?:\/\//i.test(path)
-      ? path
-      : path?.startsWith("/")
-        ? `${base}${path}`
-        : job.Id
-          ? `${base}/en/jobs/${job.Id}/`
-          : "";
-    out.push(
-      mk("uber", c.name, {
-        title: job.Title ?? "",
-        location: locationText,
-        applyUrl,
-        externalId: String(job.Id ?? ""),
-        description: stripHtml(job.Description),
-        postedAt: toDate(job.DisplayDate),
-      }),
-    );
   }
   return out;
 }
@@ -643,7 +644,7 @@ async function netflix(
 
   const rows: NetflixJobWithCountry[] = [];
   const seen = new Set<string>();
-  const q = c.queryTerms[0];
+  const q = primarySearchTerm(c, ctx);
   for (const [locationFilter, nativeCountry] of [
     ["United States", "US"],
     ["Canada", "CA"],
@@ -726,8 +727,8 @@ async function netflix(
 
 // ------------------------------------ Snap ------------------------------------
 
-async function snap(c: ApiCompany): Promise<DiscoveryPosting[]> {
-  const q = c.queryTerms[0];
+async function snap(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
+  const q = primarySearchTerm(c, ctx);
   const data = (await fetchJson(
     `https://careers.snap.com/api/jobs?keywords=${encodeURIComponent(q)}&limit=400`,
   )) as {
@@ -756,8 +757,8 @@ async function snap(c: ApiCompany): Promise<DiscoveryPosting[]> {
 
 // --------------------------- Jibe-style careers API ---------------------------
 
-async function phenom(c: ApiCompany): Promise<DiscoveryPosting[]> {
-  const q = c.queryTerms[0];
+async function phenom(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
+  const q = primarySearchTerm(c, ctx);
   const limit = 100;
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
@@ -816,6 +817,211 @@ async function phenom(c: ApiCompany): Promise<DiscoveryPosting[]> {
   return out;
 }
 
+// -------------------------------- Eightfold ---------------------------------
+
+async function eightfold(
+  c: ApiCompany,
+  ctx: FetchContext = {},
+): Promise<DiscoveryPosting[]> {
+  const config = c.eightfold!;
+  type EightfoldRow = {
+    id?: string | number;
+    displayJobId?: string;
+    name?: string;
+    locations?: string[];
+    standardizedLocations?: string[];
+    postedTs?: number;
+    positionUrl?: string;
+  };
+  const rows = new Map<string, EightfoldRow>();
+
+  for (const term of searchTerms(c, ctx)) {
+    for (let start = 0; start < 500; start += 10) {
+      const url =
+        `https://${config.host}/api/pcsx/search?domain=${encodeURIComponent(config.domain)}` +
+        `&query=${encodeURIComponent(term)}&location=&start=${start}&sort_by=timestamp`;
+      const response = (await fetchJson(url)) as {
+        data?: { count?: number; positions?: EightfoldRow[] };
+      };
+      if (!response.data || !Array.isArray(response.data.positions)) {
+        throw new Error(`${c.name} Eightfold response is missing data.positions`);
+      }
+      const positions = requireValidPostingRows(
+        `${c.name} Eightfold`,
+        response.data.positions,
+        (row) => row.id != null && isNonEmptyString(row.name) && isNonEmptyString(row.positionUrl),
+      );
+      for (const row of positions) rows.set(String(row.id), row);
+      if (positions.length === 0 || start + positions.length >= (response.data.count ?? 0)) break;
+    }
+  }
+
+  return mapPool([...rows.values()], 2, async (row) => {
+    const id = String(row.id);
+    const location = (row.standardizedLocations ?? row.locations ?? []).join(" | ");
+    const fallback = () =>
+      mk("eightfold", c.name, {
+        title: row.name ?? "",
+        location,
+        applyUrl: `https://${config.host}${row.positionUrl}`,
+        externalId: row.displayJobId ?? id,
+        description: "",
+        postedAt: toDate(row.postedTs),
+      });
+
+    if (!isSoftwareRole(row.name ?? "") || !["US", "CA"].includes(classifyCountry(location))) {
+      return fallback();
+    }
+    try {
+      const detail = (await fetchJson(
+        `https://${config.host}/api/pcsx/position_details?position_id=${encodeURIComponent(id)}` +
+          `&domain=${encodeURIComponent(config.domain)}`,
+      )) as {
+        data?: EightfoldRow & { jobDescription?: string };
+      };
+      if (!detail.data) throw new Error("response is missing data");
+      return mk("eightfold", c.name, {
+        title: detail.data.name ?? row.name ?? "",
+        location: (detail.data.standardizedLocations ?? detail.data.locations ?? []).join(" | ") || location,
+        applyUrl: `https://${config.host}${detail.data.positionUrl ?? row.positionUrl}`,
+        externalId: detail.data.displayJobId ?? row.displayJobId ?? id,
+        description: stripHtml(detail.data.jobDescription),
+        postedAt: toDate(detail.data.postedTs ?? row.postedTs),
+      });
+    } catch (error) {
+      const warning =
+        `${c.name} Eightfold detail unavailable for ${id}; using list data (` +
+        `${error instanceof Error ? error.message : String(error)})`;
+      console.warn(`[discovery] ${warning}`);
+      ctx.onWarning?.(warning);
+      return fallback();
+    }
+  });
+}
+
+// ---------------------- Oracle Recruiting Candidate Experience ----------------------
+
+async function oracle(
+  c: ApiCompany,
+  ctx: FetchContext = {},
+): Promise<DiscoveryPosting[]> {
+  const config = c.oracle!;
+  type OracleLocation = {
+    Name?: string;
+    LocationName?: string;
+    TownOrCity?: string;
+    Region2?: string;
+    Country?: string;
+  };
+  type OracleRow = {
+    Id?: string;
+    RequisitionId?: string | number;
+    Title?: string;
+    PostedDate?: string;
+    PrimaryLocation?: string;
+    PrimaryLocationCountry?: string;
+    ShortDescriptionStr?: string;
+    secondaryLocations?: OracleLocation[];
+    workLocation?: OracleLocation[];
+    otherWorkLocations?: OracleLocation[];
+  };
+  const rows = new Map<string, OracleRow>();
+
+  for (const term of searchTerms(c, ctx)) {
+    for (let offset = 0; offset < 500; offset += 100) {
+      const finder =
+        `siteNumber=${config.site},limit=100,offset=${offset},` +
+        `sortBy=POSTING_DATES_DESC,keyword=${encodeURIComponent(term)}`;
+      const url =
+        `https://${config.host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions` +
+        `?onlyData=true&expand=requisitionList.workLocation,requisitionList.otherWorkLocations,` +
+        `requisitionList.secondaryLocations&finder=findReqs;${finder}`;
+      const response = (await fetchJson(url)) as {
+        items?: { TotalJobsCount?: number; requisitionList?: OracleRow[] }[];
+      };
+      const page = response.items?.[0];
+      if (!page || !Array.isArray(page.requisitionList)) {
+        throw new Error(`${c.name} Oracle response is missing items[0].requisitionList`);
+      }
+      const jobs = requireValidPostingRows(
+        `${c.name} Oracle`,
+        page.requisitionList,
+        (row) => isNonEmptyString(row.Id) && isNonEmptyString(row.Title),
+      );
+      for (const row of jobs) rows.set(row.Id!, row);
+      if (jobs.length === 0 || offset + jobs.length >= (page.TotalJobsCount ?? 0)) break;
+    }
+  }
+
+  const formatLocation = (row: OracleRow) => {
+    const locations = [
+      ...(row.workLocation ?? []),
+      ...(row.otherWorkLocations ?? []),
+      ...(row.secondaryLocations ?? []),
+    ].map((location) =>
+      [location.TownOrCity, location.Region2, location.Country]
+        .filter(Boolean)
+        .join(", ") || location.LocationName || location.Name || "",
+    );
+    return [...new Set(locations.filter(Boolean))].join(" | ") ||
+      row.PrimaryLocation || row.PrimaryLocationCountry || "";
+  };
+
+  return mapPool([...rows.values()], 2, async (row) => {
+    const id = row.Id!;
+    const location = formatLocation(row);
+    const fallback = () =>
+      mk("oracle", c.name, {
+        title: row.Title ?? "",
+        location,
+        applyUrl: `https://${config.careerHost}/en/sites/${config.site}/job/${id}/`,
+        externalId: String(row.RequisitionId ?? id),
+        description: stripHtml(row.ShortDescriptionStr),
+        postedAt: toDate(row.PostedDate),
+      });
+
+    if (!isSoftwareRole(row.Title ?? "") || !["US", "CA"].includes(classifyCountry(location))) {
+      return fallback();
+    }
+    try {
+      const finder = `Id=${encodeURIComponent(`"${id}"`)},siteNumber=${config.site}`;
+      const detail = (await fetchJson(
+        `https://${config.host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails` +
+          `?expand=all&onlyData=true&finder=ById;${finder}`,
+      )) as {
+        items?: (OracleRow & {
+          ExternalPostedStartDate?: string;
+          ExternalDescriptionStr?: string;
+          ExternalResponsibilitiesStr?: string;
+          ExternalQualificationsStr?: string;
+        })[];
+      };
+      const job = detail.items?.[0];
+      if (!job) throw new Error("response is missing items[0]");
+      const description = [
+        job.ExternalDescriptionStr,
+        job.ExternalResponsibilitiesStr,
+        job.ExternalQualificationsStr,
+      ].filter(Boolean).join(" ");
+      return mk("oracle", c.name, {
+        title: job.Title ?? row.Title ?? "",
+        location: formatLocation(job) || location,
+        applyUrl: `https://${config.careerHost}/en/sites/${config.site}/job/${id}/`,
+        externalId: String(job.RequisitionId ?? row.RequisitionId ?? id),
+        description: stripHtml(description || job.ShortDescriptionStr),
+        postedAt: toDate(job.ExternalPostedStartDate ?? row.PostedDate),
+      });
+    } catch (error) {
+      const warning =
+        `${c.name} Oracle detail unavailable for ${id}; using list data (` +
+        `${error instanceof Error ? error.message : String(error)})`;
+      console.warn(`[discovery] ${warning}`);
+      ctx.onWarning?.(warning);
+      return fallback();
+    }
+  });
+}
+
 // ----------------------------------- Workday -----------------------------------
 
 async function workday(
@@ -832,12 +1038,21 @@ async function workday(
   };
 
   const rows = new Map<string, WorkdayListRow>();
-  for (const searchText of w.searchTerms ?? [c.queryTerms[0]]) {
+  const configuredSearches = w.searchTerms ?? c.queryTerms;
+  const searches = ctx.internshipsOnly && !w.appliedFacets
+    ? INTERNSHIP_SEARCH_TERMS
+    : configuredSearches;
+  for (const searchText of searches) {
     for (let offset = 0; offset < 100; offset += 20) {
       const data = (await fetchJson(`https://${w.host}/wday/cxs/${w.tenant}/${w.site}/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appliedFacets: {}, limit: 20, offset, searchText }),
+        body: JSON.stringify({
+          appliedFacets: w.appliedFacets ?? {},
+          limit: 20,
+          offset,
+          searchText,
+        }),
       })) as { jobPostings?: WorkdayListRow[] };
       const jobs = data.jobPostings ?? [];
       for (const j of jobs) {
@@ -848,7 +1063,7 @@ async function workday(
     }
   }
 
-  return mapPool([...rows.values()], 5, async (j) => {
+  return mapPool([...rows.values()], w.detailConcurrency ?? 5, async (j) => {
     const title = j.title ?? "";
     const location = j.locationsText ?? "";
     const generatedUrl = j.externalPath
@@ -923,10 +1138,10 @@ async function workday(
 // date or description in the listing; country is classified from the joined
 // office locations. Apply URL: lifeatspotify.com/jobs/<id>.
 
-async function spotify(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function spotify(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
-  for (const term of c.queryTerms) {
+  for (const term of searchTerms(c, ctx)) {
     const data = (await fetchJson(
       `https://api.lifeatspotify.com/wp-json/animal/v1/job/search?query=${encodeURIComponent(term)}`,
     )) as {
@@ -967,24 +1182,23 @@ async function microsoft(
   ctx: FetchContext = {},
 ): Promise<DiscoveryPosting[]> {
   const base = "https://apply.careers.microsoft.com";
-  const q = c.queryTerms[0];
+  // The Microsoft endpoint is both undocumented and unusually sensitive to
+  // pagination bursts. Keep internship-only discovery narrowly scoped even if
+  // a broad global query override is configured in the dashboard.
+  const q = ctx.internshipsOnly ? "intern" : c.queryTerms[0];
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
   let requests = 0;
 
   const fetchPage = async (url: string) => {
-    if (requests > 0) await wait(200);
-    requests++;
-    try {
-      return await fetchJson(url);
-    } catch (error) {
-      if (!(error instanceof FetchHttpError) || error.status !== 429) throw error;
-      await wait(
-        Math.min(5_000, Math.max(500, error.retryAfterMs ?? 1_500)),
-      );
-      requests++;
-      return fetchJson(url);
+    // Avoid a fixed machine-like cadence and never send parallel requests to
+    // this host. A rate-limited page stops the source for the current cycle;
+    // the next scheduled run is two hours away, so no immediate retry is useful.
+    if (requests > 0) {
+      await wait(2_500 + Math.floor(Math.random() * 1_001));
     }
+    requests++;
+    return fetchJson(url);
   };
 
   for (const location of ["United States", "Canada"] as const) {
@@ -1049,9 +1263,9 @@ async function microsoft(
 // id, and build the apply URL from its /job/... path. Paginated via CurrentPage;
 // the seen-set + per-page "added" guard stops us if pagination ever loops.
 
-async function talentbrew(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function talentbrew(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const host = c.talentbrew!.host;
-  const q = c.queryTerms[0];
+  const q = primarySearchTerm(c, ctx);
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
   for (let page = 1; page <= 12; page++) {
@@ -1098,8 +1312,131 @@ async function talentbrew(c: ApiCompany): Promise<DiscoveryPosting[]> {
   return out;
 }
 
+// ------------------------------ SmartRecruiters ------------------------------
+// Public company-scoped Posting API. We request only configured countries, then
+// hydrate software-looking rows from the detail endpoint so the internship and
+// degree classifiers see the complete posting text.
+
+interface SmartRecruitersListRow {
+  id?: string;
+  name?: string;
+  releasedDate?: string;
+  location?: { fullLocation?: string; city?: string; region?: string; country?: string };
+  experienceLevel?: { id?: string; label?: string };
+  typeOfEmployment?: { id?: string; label?: string };
+}
+
+async function smartrecruiters(
+  c: ApiCompany,
+  ctx: FetchContext = {},
+): Promise<DiscoveryPosting[]> {
+  const companyIdentifier = c.token ?? "";
+  if (!companyIdentifier) throw new Error("SmartRecruiters company identifier is missing");
+  const countries = (ctx.countries?.length ? ctx.countries : ["US", "CA"])
+    .map((country) => country.toLowerCase());
+  const rows = new Map<string, SmartRecruitersListRow>();
+
+  for (const country of countries) {
+    let offset = 0;
+    for (let page = 0; page < 60; page++) {
+      const url =
+        `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyIdentifier)}/postings` +
+        `?destination=PUBLIC&country=${encodeURIComponent(country)}` +
+        `${ctx.internshipsOnly ? "&q=intern" : ""}&limit=100&offset=${offset}`;
+      const data = (await fetchJson(url, undefined, 30000)) as {
+        totalFound?: number;
+        content?: SmartRecruitersListRow[];
+      };
+      if (!Array.isArray(data.content)) {
+        throw new Error("SmartRecruiters response did not contain a content array");
+      }
+      for (const row of data.content) {
+        if (isNonEmptyString(row.id) && isNonEmptyString(row.name)) rows.set(row.id, row);
+      }
+      offset += data.content.length;
+      if (!data.content.length || offset >= Number(data.totalFound ?? offset)) break;
+    }
+  }
+
+  const candidates = [...rows.values()].filter((row) =>
+    isSoftwareRole(row.name ?? ""),
+  );
+  return (
+    await mapPool(candidates, 2, async (row): Promise<DiscoveryPosting | null> => {
+      const id = row.id ?? "";
+      try {
+        const detail = (await fetchJson(
+          `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyIdentifier)}/postings/${encodeURIComponent(id)}`,
+          undefined,
+          30000,
+        )) as {
+          name?: string;
+          releasedDate?: string;
+          postingUrl?: string;
+          applyUrl?: string;
+          location?: SmartRecruitersListRow["location"];
+          experienceLevel?: SmartRecruitersListRow["experienceLevel"];
+          typeOfEmployment?: SmartRecruitersListRow["typeOfEmployment"];
+          jobAd?: { sections?: Record<string, { title?: string; text?: string }> };
+          compensation?: { min?: number; max?: number; currency?: string; period?: string };
+        };
+        const locationData = detail.location ?? row.location;
+        const location =
+          locationData?.fullLocation ??
+          [locationData?.city, locationData?.region, locationData?.country]
+            .filter(Boolean)
+            .join(", ");
+        const sections = Object.values(detail.jobAd?.sections ?? {})
+          .map((section) => `${section.title ?? ""}\n${stripHtml(section.text)}`.trim())
+          .filter(Boolean);
+        const experience = detail.experienceLevel ?? row.experienceLevel;
+        const employment = detail.typeOfEmployment ?? row.typeOfEmployment;
+        const description = [
+          experience?.label || experience?.id
+            ? `Experience level: ${experience.label ?? experience.id}.`
+            : "",
+          employment?.label || employment?.id
+            ? `Employment type: ${employment.label ?? employment.id}.`
+            : "",
+          ...sections,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        const compensation = detail.compensation
+          ? [
+              detail.compensation.min,
+              detail.compensation.max,
+              detail.compensation.currency,
+              detail.compensation.period,
+            ]
+              .filter((value) => value != null)
+              .join(" ")
+          : null;
+        const applyUrl = detail.applyUrl ?? detail.postingUrl;
+        if (!isHttpUrl(applyUrl)) return null;
+        return mk("smartrecruiters", c.name, {
+          title: detail.name ?? row.name ?? "",
+          location,
+          applyUrl,
+          externalId: id,
+          description,
+          postedAt: toDate(detail.releasedDate ?? row.releasedDate),
+          compensation,
+        });
+      } catch (error) {
+        ctx.onWarning?.(
+          `SmartRecruiters detail ${c.name}/${id} failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return null;
+      }
+    })
+  ).filter((posting): posting is DiscoveryPosting => posting !== null);
+}
+
 // --------------------------------- GitHub board ---------------------------------
-// Community-maintained new-grad aggregators publish either listings.json or a
+// Community-maintained internship aggregators publish either listings.json or a
 // Markdown jobs table. Each row is a real posting at a real employer, so the
 // posting's company comes from the row rather than the board name.
 
@@ -1194,10 +1531,14 @@ function githubMarkdownBoard(c: ApiCompany, markdown: string): DiscoveryPosting[
 async function githubBoard(c: ApiCompany): Promise<DiscoveryPosting[]> {
   const b = c.board!;
   const url = `https://raw.githubusercontent.com/${b.owner}/${b.repo}/${b.ref}/${b.path}`;
+  const body = await fetchConditionallyCachedText(
+    `githubboard:${b.owner}/${b.repo}/${b.ref}/${b.path}`,
+    url,
+  );
   if (b.format === "markdown") {
-    return githubMarkdownBoard(c, await fetchText(url, 30000));
+    return githubMarkdownBoard(c, body);
   }
-  const data = (await fetchJson(url, { headers: { Accept: "application/json" } }, 30000)) as
+  const data = JSON.parse(body) as
     | BoardListing[]
     | { data?: BoardListing[]; listings?: BoardListing[] };
   const rows: BoardListing[] = Array.isArray(data) ? data : (data.listings ?? data.data ?? []);
@@ -1232,7 +1573,7 @@ async function githubBoard(c: ApiCompany): Promise<DiscoveryPosting[]> {
 }
 
 const FETCHERS: Record<
-  Exclude<DiscoverySystem, "ycombinator">,
+  Exclude<DiscoverySystem, "ycombinator" | "watchlist">,
   (c: ApiCompany, ctx?: FetchContext) => Promise<DiscoveryPosting[]>
 > = {
   greenhouse,
@@ -1240,11 +1581,13 @@ const FETCHERS: Record<
   lever,
   workable,
   teamtailor,
+  smartrecruiters,
   amazon,
-  uber,
   netflix,
   snap,
   phenom,
+  eightfold,
+  oracle,
   spotify,
   talentbrew,
   microsoft,
@@ -1257,7 +1600,60 @@ const FETCHERS: Record<
 export interface FetchContext {
   yc?: YcConfig;
   countries?: string[];
+  internshipsOnly?: boolean;
+  watchedCompanies?: WatchedCompany[];
   onWarning?: (message: string) => void;
+}
+
+// ------------------------------- Company watchlist -------------------------------
+
+async function watchlist(c: ApiCompany, ctx: FetchContext): Promise<DiscoveryPosting[]> {
+  const companies = (ctx.watchedCompanies ?? []).map((company) => ({
+    name: company.name,
+    slug: `watch-${createHash("sha1").update(`${company.name}|${company.website}`).digest("hex").slice(0, 20)}`,
+    website: company.website,
+    batch: null,
+    status: "Active",
+    team_size: null,
+    isHiring: true,
+    regions: null,
+    all_locations: "Remote",
+  } satisfies YcDirectoryCompany));
+  if (!companies.length) return [];
+
+  const boards = await resolveYcBoards(companies, {
+    prisma,
+    fetchText: (url) => fetchText(url, 8000),
+    concurrency: Math.min(8, Math.max(1, companies.length)),
+    onProbeFailure: (company, error) =>
+      ctx.onWarning?.(
+        `Watchlist ATS discovery unavailable for ${company.name}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      ),
+  });
+
+  const perBoard = await mapPool(boards, 8, async (board) => {
+    const synthetic: ApiCompany = {
+      name: board.name,
+      method: "api",
+      system: board.system,
+      token: board.token,
+      countryFilter: "post",
+      queryTerms: c.queryTerms,
+    };
+    try {
+      return await FETCHERS[board.system](synthetic, ctx);
+    } catch (error) {
+      ctx.onWarning?.(
+        `Watchlist board ${board.name} (${board.system}) failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    }
+  });
+  return perBoard.flat();
 }
 
 // --------------------------------- Y Combinator ---------------------------------
@@ -1338,6 +1734,7 @@ export async function fetchCompanyPostings(
   ctx: FetchContext = {},
 ): Promise<DiscoveryPosting[]> {
   if (c.system === "ycombinator") return ycombinator(c, ctx);
+  if (c.system === "watchlist") return watchlist(c, ctx);
   const fetcher = FETCHERS[c.system];
   if (!fetcher) throw new Error(`no discovery fetcher for system ${c.system}`);
   return fetcher(c, ctx);

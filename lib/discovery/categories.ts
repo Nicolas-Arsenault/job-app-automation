@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 //
 // Every discovered job belongs to exactly one company category so the dashboard
-// can filter and label by kind: Big Tech, AI Lab, Quant, Startup (or Other for
-// unknown employers surfaced by aggregator boards).
+// can filter and label by kind: Big Tech, Mid Tech, AI Lab, Quant, Startup (or
+// Other for unknown employers surfaced by aggregator boards).
 //
 // This is a *derive-on-read* classifier — a pure function of the company name,
 // not a stored column. The name is the single source of truth, so re-labelling
@@ -18,10 +18,11 @@
 // guard in test/categories.test.ts asserts every catalog company still resolves
 // to a real (non-"other") category, so the two never silently diverge.
 
-export type JobCategory = "bigtech" | "ai" | "quant" | "defense" | "startup" | "other";
+export type JobCategory = "bigtech" | "midtech" | "ai" | "quant" | "defense" | "startup" | "other";
 
 export const CATEGORY_LABELS: Record<JobCategory, string> = {
   bigtech: "Big Tech",
+  midtech: "Mid Tech",
   ai: "AI Lab",
   quant: "Quant",
   defense: "Defense",
@@ -30,7 +31,7 @@ export const CATEGORY_LABELS: Record<JobCategory, string> = {
 };
 
 // Display / facet order: broadest and most-recognizable buckets first.
-export const CATEGORY_ORDER: JobCategory[] = ["bigtech", "ai", "quant", "defense", "startup", "other"];
+export const CATEGORY_ORDER: JobCategory[] = ["bigtech", "midtech", "ai", "quant", "defense", "startup", "other"];
 
 function norm(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -44,6 +45,16 @@ const BIGTECH = new Set(
     "Robinhood", "Dropbox", "Pinterest", "Cloudflare", "Lyft", "Airbnb",
     "Roblox", "HubSpot", "Datadog", "Waymo", "Apple", "Tesla", "Google",
     "Shopify", "Meta", "LinkedIn", "Rivian", "Cisco",
+    "Ubisoft", "Bosch", "Visa",
+  ].map(norm),
+);
+
+// Established mid-sized technology companies, including the Canada-heavy
+// employers explicitly targeted by this deployment.
+const MIDTECH = new Set(
+  [
+    "Coveo", "Ciena", "Kinaxis", "Autodesk", "Nokia", "Ericsson", "Clio",
+    "BlackBerry",
   ].map(norm),
 );
 
@@ -151,6 +162,7 @@ export function categorizeCompany(name: string, fallback: JobCategory = "startup
   const key = norm(name);
   if (!key) return fallback;
   if (BIGTECH.has(key)) return "bigtech";
+  if (MIDTECH.has(key)) return "midtech";
   if (AI.has(key)) return "ai";
   if (QUANT.has(key)) return "quant";
   if (DEFENSE.has(key)) return "defense";

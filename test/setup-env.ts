@@ -6,5 +6,7 @@ process.env.DATABASE_URL = "file:./test.db";
 process.env.APPLY_MODE = process.env.APPLY_MODE ?? "dry_run";
 delete process.env.OPENAI_API_KEY; // force the deterministic resume fallback
 delete process.env.COPILOT_JUDGE_CONNECTED;
+delete process.env.DISCORD_WEBHOOK_URL;
+delete process.env.DISCORD_MAX_POST_AGE_MINUTES;
 
 vi.mock("server-only", () => ({}));

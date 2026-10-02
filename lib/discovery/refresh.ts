@@ -33,6 +33,10 @@ import {
   type DiscoverySourceOutcomeCounts,
   type DiscoverySourceOutcome,
 } from "./lifecycle";
+import {
+  notifyDiscordForDiscovery,
+  type DiscordNotificationResult,
+} from "../notifications/discord";
 
 export interface BrowserRefreshResult {
   company: string;
@@ -60,6 +64,7 @@ export interface DiscoveryRefreshResult {
     untracked: AvailabilityReconciliationResult;
   };
   judge: JudgeRunResult;
+  discord: DiscordNotificationResult;
   totals: {
     sources: number;
     created: number;
@@ -185,9 +190,9 @@ export async function getDiscoveryRefreshAvailability(
 ): Promise<DiscoveryRefreshAvailability> {
   const state = await prisma.discoveryRunState.findUnique({
     where: { id: "default" },
-    select: { lastSucceededAt: true },
+    select: { lastManualSucceededAt: true },
   });
-  return calculateDiscoveryRefreshAvailability(state?.lastSucceededAt ?? null, now);
+  return calculateDiscoveryRefreshAvailability(state?.lastManualSucceededAt ?? null, now);
 }
 
 export async function reserveDiscoveryRefreshStart(
@@ -207,15 +212,21 @@ export async function reserveDiscoveryRefreshStart(
 
 export async function recordDiscoveryRefreshSuccess(
   finishedAt = new Date(),
+  options: { manual?: boolean } = {},
 ): Promise<void> {
+  const manual = options.manual ?? true;
   await prisma.discoveryRunState.upsert({
     where: { id: "default" },
     create: {
       id: "default",
       lastStartedAt: finishedAt,
       lastSucceededAt: finishedAt,
+      lastManualSucceededAt: manual ? finishedAt : null,
     },
-    update: { lastSucceededAt: finishedAt },
+    update: {
+      lastSucceededAt: finishedAt,
+      ...(manual ? { lastManualSucceededAt: finishedAt } : {}),
+    },
   });
 }
 
@@ -277,7 +288,9 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
   const config = await getDiscoveryConfig();
   const disabled = new Set(config.disabledSources.map((source) => source.toLowerCase()));
   const apiSourceCount = DISCOVERY_SOURCES.filter(
-    (source) => !disabled.has(source.name.toLowerCase()),
+    (source) =>
+      !disabled.has(source.name.toLowerCase()) &&
+      (source.system !== "watchlist" || config.watchedCompanies.length > 0),
   ).length;
   const supportedBrowserCompanies = BROWSER_COMPANIES.filter(
     (company) =>
@@ -404,6 +417,7 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
     message: "Scoring newly discovered jobs…",
   });
   const judge = await scoreNewDiscoveryJobs();
+  const discord = await notifyDiscordForDiscovery(new Date(started));
   const finished = Date.now();
   const browserCreated = browser.reduce((sum, result) => sum + result.created, 0);
   const browserUpdated = browser.reduce((sum, result) => sum + result.updated, 0);
@@ -424,6 +438,7 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
       untracked: untrackedLifecycle,
     },
     judge,
+    discord,
     totals: {
       sources: api.companies.length + browser.length,
       created: api.created + browserCreated,
@@ -442,7 +457,9 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
   };
 }
 
-export async function runDiscoveryRefresh(): Promise<DiscoveryRefreshResult> {
+export async function runDiscoveryRefresh(
+  options: { bypassManualCooldown?: boolean } = {},
+): Promise<DiscoveryRefreshResult> {
   if (activeRefresh || refreshStartPending) {
     throw new DiscoveryRefreshInProgressError();
   }
@@ -450,7 +467,15 @@ export async function runDiscoveryRefresh(): Promise<DiscoveryRefreshResult> {
   const started = Date.now();
   let refresh: Promise<DiscoveryRefreshResult>;
   try {
-    await reserveDiscoveryRefreshStart(new Date(started));
+    if (options.bypassManualCooldown) {
+      await prisma.discoveryRunState.upsert({
+        where: { id: "default" },
+        create: { id: "default", lastStartedAt: new Date(started) },
+        update: { lastStartedAt: new Date(started) },
+      });
+    } else {
+      await reserveDiscoveryRefreshStart(new Date(started));
+    }
     refreshProgress = {
       running: true,
       phase: "starting",
@@ -472,7 +497,9 @@ export async function runDiscoveryRefresh(): Promise<DiscoveryRefreshResult> {
 
   try {
     const result = await refresh;
-    await recordDiscoveryRefreshSuccess(new Date(result.finishedAt));
+    await recordDiscoveryRefreshSuccess(new Date(result.finishedAt), {
+      manual: !options.bypassManualCooldown,
+    });
     updateProgress({
       running: false,
       phase: "complete",

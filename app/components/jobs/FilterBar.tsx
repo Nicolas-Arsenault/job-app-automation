@@ -2,6 +2,7 @@
 
 import { cls } from "../ui";
 import { CATEGORY_LABELS } from "@/lib/discovery/categories";
+import { formatRecruitingTerm } from "@/lib/jobs/term";
 import type { FacetItem, FilterState, JobFacets, MultiFilterKey, SinceKey, SortKey } from "./types";
 
 const SINCE_OPTIONS: { value: SinceKey; label: string }[] = [
@@ -72,6 +73,7 @@ function titleize(value: string): string {
 }
 
 function formatFacetLabel(filterKey: MultiFilterKey, value: string): string {
+  if (filterKey === "term") return formatRecruitingTerm(value);
   if (filterKey === "sponsorship") return SPONSORSHIP_LABELS[value] ?? titleize(value);
   if (filterKey === "employmentType") return EMPLOYMENT_LABELS[value] ?? titleize(value);
   if (filterKey === "platform") return PLATFORM_LABELS[value] ?? titleize(value);
@@ -98,6 +100,7 @@ function activeFilterCount(filters: FilterState): number {
     (filters.sort !== "posted" ? 1 : 0) +
     (filters.since !== "all" ? 1 : 0) +
     (filters.q.trim() ? 1 : 0) +
+    filters.term.length +
     filters.skills.length +
     filters.sponsorship.length +
     filters.employmentType.length +
@@ -355,6 +358,14 @@ export function FilterBar({
           </div>
         ) : (
           <>
+            <ChipGroup
+              label="Term"
+              hint="recruiting season"
+              items={facets?.terms ?? []}
+              selected={filters.term}
+              filterKey="term"
+              onToggleValue={onToggleValue}
+            />
             <ChipGroup
               label="Category"
               hint="company type"

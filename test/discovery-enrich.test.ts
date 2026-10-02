@@ -188,6 +188,18 @@ describe("classifySponsorship", () => {
     ).toBe("none");
   });
 
+  it("recognizes explicit J-1 support and rejection", () => {
+    expect(
+      classifySponsorship({ description: "J-1 visa sponsorship is available for this internship." }),
+    ).toBe("offers");
+    expect(
+      classifySponsorship({ description: "Candidates are eligible for J-1 sponsorship." }),
+    ).toBe("offers");
+    expect(
+      classifySponsorship({ description: "J-1 and exchange visitor sponsorship are not supported." }),
+    ).toBe("none");
+  });
+
   it("parses an offers statement", () => {
     expect(
       classifySponsorship({ description: "Visa sponsorship is available for this position." }),

@@ -13,6 +13,7 @@ import {
   createGoldenJobMatcher,
   historicalGoldenJobMatch,
 } from "@/lib/jobs/golden";
+import { extractJobRecruitingTerms } from "@/lib/jobs/term";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
   const since = searchParams.get("since") ?? "all"; // 24h | 7d | 30d | all
   // Enrichment / pipeline filters (all optional, comma-lists where sensible).
   const skills = parseList(searchParams.get("skills")); // AND — job must have all
+  const terms = parseList(searchParams.get("term")); // winter-2027 | spring-2027 | summer-2027 | fall-2027
   const sponsorship = parseList(searchParams.get("sponsorship")); // offers | none | citizenship
   const status = parseList(searchParams.get("status")); // applicationStatus values
   const employmentType = parseList(searchParams.get("employmentType"));
@@ -96,6 +98,7 @@ export async function GET(req: NextRequest) {
   const jobs = await prisma.job.findMany({
     where: {
       isEntryLevel: true,
+      ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
       ...jobAvailabilityWhere(availability),
       ...(country ? { country } : { country: { in: ["US", "CA"] } }),
     },
@@ -142,6 +145,15 @@ export async function GET(req: NextRequest) {
     if (salaryMin) {
       const top = j.salaryMax ?? j.salaryMin ?? 0;
       if (top < salaryMin) return false;
+    }
+    if (terms.length) {
+      const jobTerms = extractJobRecruitingTerms({
+        title: j.title,
+        description: j.description,
+        sourceNames: j.sightings.map((sighting) => sighting.source.name),
+      });
+      const normalizedJobTerms = jobTerms.length > 0 ? jobTerms : ["unknown"];
+      if (!terms.some((term) => normalizedJobTerms.includes(term))) return false;
     }
     if (skills.length) {
       const have = (j.skills ?? "").toLowerCase();

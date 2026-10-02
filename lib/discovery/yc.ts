@@ -26,7 +26,7 @@ export interface YcDirectoryCompany {
   all_locations?: string | null;
 }
 
-export type ResolvedSystem = "greenhouse" | "lever" | "ashby";
+export type ResolvedSystem = "greenhouse" | "lever" | "ashby" | "smartrecruiters";
 
 export interface ResolvedBoard {
   name: string;
@@ -135,6 +135,10 @@ export function detectAtsFromHtml(html: string): { system: ResolvedSystem; token
     // Ashby.
     { system: "ashby", re: /jobs\.ashbyhq\.com\/([a-z0-9-]+)/i },
     { system: "ashby", re: /api\.ashbyhq\.com\/posting-api\/job-board\/([a-z0-9-]+)/i },
+    // SmartRecruiters public career site. Identifiers preserve case in URLs,
+    // but its API accepts the captured value as-is.
+    { system: "smartrecruiters", re: /careers\.smartrecruiters\.com\/([a-z0-9-]+)/i },
+    { system: "smartrecruiters", re: /api\.smartrecruiters\.com\/v1\/companies\/([a-z0-9-]+)\/postings/i },
   ];
   for (const { system, re } of patterns) {
     const m = html.match(re);

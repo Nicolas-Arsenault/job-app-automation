@@ -84,6 +84,7 @@ export interface FacetItem {
 }
 
 export interface JobFacets {
+  terms: FacetItem[];
   skills: FacetItem[];
   sources: FacetItem[];
   categories: FacetItem[];
@@ -101,6 +102,7 @@ export interface FilterState {
   sort: SortKey;
   since: SinceKey;
   q: string;
+  term: string[];
   skills: string[];
   sponsorship: string[];
   employmentType: string[];
@@ -116,6 +118,7 @@ export interface FilterState {
 }
 
 export type MultiFilterKey =
+  | "term"
   | "skills"
   | "sponsorship"
   | "employmentType"
@@ -128,6 +131,7 @@ export const DEFAULT_FILTERS: FilterState = {
   sort: "posted",
   since: "all",
   q: "",
+  term: [],
   skills: [],
   sponsorship: [],
   employmentType: [],
