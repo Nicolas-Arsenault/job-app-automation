@@ -5,6 +5,7 @@ import { prisma } from "../lib/db";
 import { jsonResponse } from "./helpers";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -168,6 +169,8 @@ describe("Canada-first ATS adapters", () => {
 
 describe("microsoft adapter (pcsx)", () => {
   it("maps positions to postings with country + apply URL", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -196,7 +199,9 @@ describe("microsoft adapter (pcsx)", () => {
     );
 
     const c = API_COMPANIES.find((x) => x.name === "Microsoft")!;
-    const posts = await fetchCompanyPostings(c);
+    const pending = fetchCompanyPostings(c, { internshipsOnly: true });
+    await vi.advanceTimersByTimeAsync(2_500);
+    const posts = await pending;
     const us = posts.find((p) => p.externalId === "111")!;
     const ca = posts.find((p) => p.externalId === "222")!;
     expect(us.title).toBe("Software Engineer");
@@ -205,9 +210,15 @@ describe("microsoft adapter (pcsx)", () => {
     expect(us.postedAt).toBeInstanceOf(Date);
     expect(ca.country).toBe("CA");
     expect(ca.system).toBe("microsoft");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("query=intern"),
+      expect.anything(),
+    );
   });
 
-  it("keeps partial results and reports repeated rate limiting", async () => {
+  it("keeps partial results and stops immediately when rate limited", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
     let calls = 0;
     const fetchMock = vi.fn(async () => {
       calls++;
@@ -233,41 +244,28 @@ describe("microsoft adapter (pcsx)", () => {
     const onWarning = vi.fn();
     const company = API_COMPANIES.find((candidate) => candidate.name === "Microsoft")!;
 
-    const posts = await fetchCompanyPostings(company, { onWarning });
+    const pending = fetchCompanyPostings(company, { onWarning });
+    await vi.advanceTimersByTimeAsync(2_499);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const posts = await pending;
 
     expect(posts).toHaveLength(10);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(onWarning).toHaveBeenCalledWith(
       expect.stringMatching(/pagination stopped after 10 postings: HTTP 429/),
     );
   });
 
-  it("uses the fallback delay when Retry-After is missing", async () => {
-    vi.useFakeTimers();
-    try {
-      let calls = 0;
-      const fetchMock = vi.fn(async () => {
-        calls++;
-        if (calls === 1) return new Response("", { status: 429 });
-        return jsonResponse({ data: { count: 0, positions: [] } });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-      const company = API_COMPANIES.find(
-        (candidate) => candidate.name === "Microsoft",
-      )!;
+  it("does not retry an initial rate limit response", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 429 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const company = API_COMPANIES.find(
+      (candidate) => candidate.name === "Microsoft",
+    )!;
 
-      const pending = fetchCompanyPostings(company);
-      await vi.advanceTimersByTimeAsync(1_499);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      await vi.advanceTimersByTimeAsync(1_000);
-
-      await expect(pending).resolves.toEqual([]);
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(fetchCompanyPostings(company)).rejects.toThrow("HTTP 429");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

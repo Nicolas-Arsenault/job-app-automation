@@ -178,7 +178,7 @@ export const API_COMPANIES: ApiCompany[] = [
 
   // ---- Bespoke public JSON endpoints
   { name: "Amazon", method: "api", system: "amazon", countryFilter: "native", queryTerms: SWE },
-  { name: "Microsoft", method: "api", system: "microsoft", countryFilter: "native", queryTerms: SWE },
+  { name: "Microsoft", method: "api", system: "microsoft", countryFilter: "native", queryTerms: ["intern"] },
   { name: "Uber", method: "api", system: "uber", countryFilter: "native", queryTerms: SWE },
   { name: "Netflix", method: "api", system: "netflix", countryFilter: "native", queryTerms: SWE },
   { name: "Snap", method: "api", system: "snap", countryFilter: "post", queryTerms: SWE },

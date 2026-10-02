@@ -1237,26 +1237,23 @@ async function microsoft(
   ctx: FetchContext = {},
 ): Promise<DiscoveryPosting[]> {
   const base = "https://apply.careers.microsoft.com";
-  const q = c.queryTerms[0];
+  // The Microsoft endpoint is both undocumented and unusually sensitive to
+  // pagination bursts. Keep internship-only discovery narrowly scoped even if
+  // a broad global query override is configured in the dashboard.
+  const q = ctx.internshipsOnly ? "intern" : c.queryTerms[0];
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
   let requests = 0;
 
   const fetchPage = async (url: string) => {
-    // This undocumented careers endpoint has returned 429s at the previous
-    // five-requests-per-second pace. Keep it to at most one request per second.
-    if (requests > 0) await wait(1_000);
-    requests++;
-    try {
-      return await fetchJson(url);
-    } catch (error) {
-      if (!(error instanceof FetchHttpError) || error.status !== 429) throw error;
-      await wait(
-        Math.min(5_000, Math.max(500, error.retryAfterMs ?? 1_500)),
-      );
-      requests++;
-      return fetchJson(url);
+    // Avoid a fixed machine-like cadence and never send parallel requests to
+    // this host. A rate-limited page stops the source for the current cycle;
+    // the next scheduled run is two hours away, so no immediate retry is useful.
+    if (requests > 0) {
+      await wait(2_500 + Math.floor(Math.random() * 1_001));
     }
+    requests++;
+    return fetchJson(url);
   };
 
   for (const location of ["United States", "Canada"] as const) {
