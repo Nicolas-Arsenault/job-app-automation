@@ -131,6 +131,7 @@ export interface AutofillWebsite {
 export interface AutofillProfile {
   firstName: string;
   preferredName: string;
+  nativeFullName: string;
   middleName: string;
   lastName: string;
   nameSuffix: string;
@@ -161,6 +162,8 @@ export interface AutofillProfile {
   caCitizenshipStatusOther: string;
   linkedinUrl: string;
   githubUrl: string;
+  xUrl: string;
+  googleScholarUrl: string;
   portfolioUrl: string;
   exceptionalWork: string;
   additionalWebsites: AutofillWebsite[];
@@ -377,6 +380,12 @@ export function buildAutofillProfile(
     workExperiences.find((entry) => entry.currentRole === "yes")?.company ||
     workExperiences[0]?.company ||
     "";
+  const additionalWebsites = profile.additionalWebsites ?? [];
+  const websiteByLabel = (pattern: RegExp) =>
+    text(additionalWebsites.find((entry) => pattern.test(text(entry.label)))?.url);
+  const xUrl = text(profile.xUrl) || websiteByLabel(/^(?:x|twitter)$/i);
+  const googleScholarUrl =
+    text(profile.googleScholarUrl) || websiteByLabel(/^google scholar$/i);
   const websites = [
     { label: "LinkedIn", url: text(profile.linkedin) },
     { label: "GitHub", url: text(profile.github) },
@@ -384,7 +393,9 @@ export function buildAutofillProfile(
       label: "Portfolio",
       url: text(profile.website) || text(profile.portfolio),
     },
-    ...(profile.additionalWebsites ?? []).map((entry) => ({
+    { label: "X", url: xUrl },
+    { label: "Google Scholar", url: googleScholarUrl },
+    ...additionalWebsites.map((entry) => ({
       label: text(entry.label),
       url: text(entry.url),
     })),
@@ -398,6 +409,7 @@ export function buildAutofillProfile(
   return {
     firstName: text(profile.firstName),
     preferredName: text(profile.preferredName),
+    nativeFullName: text(profile.nativeFullName),
     middleName: text(profile.middleName),
     lastName: text(profile.lastName),
     nameSuffix: text(profile.nameSuffix),
@@ -446,6 +458,8 @@ export function buildAutofillProfile(
         : "",
     linkedinUrl: text(profile.linkedin),
     githubUrl: text(profile.github),
+    xUrl,
+    googleScholarUrl,
     portfolioUrl: text(profile.website) || text(profile.portfolio),
     exceptionalWork: multilineText(profile.exceptionalWork, 20_000),
     additionalWebsites: websites,

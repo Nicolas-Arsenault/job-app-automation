@@ -83,6 +83,7 @@ export interface ProfileWebsite {
 export interface ProfileData {
   firstName?: string;
   preferredName?: string;
+  nativeFullName?: string;
   middleName?: string;
   lastName?: string;
   nameSuffix?: string;
@@ -100,6 +101,8 @@ export interface ProfileData {
   location?: string; // legacy; migrated to usLocation
   linkedin?: string;
   github?: string;
+  xUrl?: string;
+  googleScholarUrl?: string;
   website?: string;
   portfolio?: string;
   exceptionalWork?: string;
@@ -184,6 +187,7 @@ export interface ProfileData {
 export const DEFAULT_PROFILE: ProfileData = {
   firstName: "",
   preferredName: "",
+  nativeFullName: "",
   middleName: "",
   lastName: "",
   nameSuffix: "",
@@ -200,6 +204,8 @@ export const DEFAULT_PROFILE: ProfileData = {
   homeCountry: "",
   linkedin: "",
   github: "",
+  xUrl: "",
+  googleScholarUrl: "",
   website: "",
   portfolio: "",
   exceptionalWork: "",
@@ -433,6 +439,7 @@ function normalizeProfileData(data: ProfileData): ProfileData {
   const profile = { ...DEFAULT_PROFILE, ...data };
   delete profile[PROFILE_FIELD_VERSIONS_KEY];
   profile.middleName = boundedText(profile.middleName, 200);
+  profile.nativeFullName = boundedText(profile.nativeFullName, 400);
   profile.nameSuffix = boundedText(profile.nameSuffix, 100);
   profile.phoneCountryCode = boundedText(profile.phoneCountryCode, 20);
   profile.phoneType = boundedText(profile.phoneType, 100);
@@ -448,6 +455,8 @@ function normalizeProfileData(data: ProfileData): ProfileData {
     20_000,
   );
   profile.additionalWebsites = normalizeWebsites(profile.additionalWebsites);
+  profile.xUrl = boundedText(profile.xUrl, 2_000);
+  profile.googleScholarUrl = boundedText(profile.googleScholarUrl, 2_000);
   profile.educationStartDate = monthValue(profile.educationStartDate);
   profile.graduationDateExact = dateValue(profile.graduationDateExact);
   profile.graduationDate =

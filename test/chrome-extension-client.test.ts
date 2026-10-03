@@ -18,6 +18,7 @@ import type { ProfileData } from "../lib/settings";
 const PROFILE = {
   firstName: " Jane ",
   preferredName: " JJ ",
+  nativeFullName: " Jane Q. Doe ",
   middleName: " Q ",
   lastName: " Doe ",
   nameSuffix: " Jr. ",
@@ -143,6 +144,8 @@ const PROFILE = {
   veteranStatus: "Not a protected veteran",
   linkedin: " https://www.linkedin.com/in/jane ",
   github: " https://github.com/jane ",
+  xUrl: " https://x.com/jane ",
+  googleScholarUrl: " https://scholar.google.com/citations?user=jane ",
   website: " https://jane.dev ",
   exceptionalWork: " Built a deployment platform used by 40 teams.\n\n  ",
   coverLetterTemplate: " Hello hiring team.\n\nThank you. ",
@@ -193,6 +196,7 @@ describe("Chrome extension identity and profile mapping", () => {
     ).toEqual({
       firstName: "Jane",
       preferredName: "JJ",
+      nativeFullName: "Jane Q. Doe",
       middleName: "Q",
       lastName: "Doe",
       nameSuffix: "Jr.",
@@ -223,6 +227,8 @@ describe("Chrome extension identity and profile mapping", () => {
       caCitizenshipStatusOther: "Protected person",
       linkedinUrl: "https://www.linkedin.com/in/jane",
       githubUrl: "https://github.com/jane",
+      xUrl: "https://x.com/jane",
+      googleScholarUrl: "https://scholar.google.com/citations?user=jane",
       portfolioUrl: "https://jane.dev",
       exceptionalWork: "Built a deployment platform used by 40 teams.\n\n  ",
       additionalWebsites: [
@@ -232,6 +238,11 @@ describe("Chrome extension identity and profile mapping", () => {
         },
         { label: "GitHub", url: "https://github.com/jane" },
         { label: "Portfolio", url: "https://jane.dev" },
+        { label: "X", url: "https://x.com/jane" },
+        {
+          label: "Google Scholar",
+          url: "https://scholar.google.com/citations?user=jane",
+        },
         { label: "Blog", url: "https://blog.jane.dev" },
       ],
       school: "University of Ottawa",

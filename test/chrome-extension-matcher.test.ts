@@ -108,6 +108,7 @@ describe("Chrome extension profile storage", () => {
   it("keeps only known, bounded profile fields", () => {
     const profile = profileSchema.sanitizeStoredProfile({
       firstName: " Jane ",
+      nativeFullName: " Jane Q. Doe ",
       workAuthorization: "maybe",
       requiresSponsorship: "no",
       country: "United States",
@@ -116,6 +117,7 @@ describe("Chrome extension profile storage", () => {
       undergraduateGpa: "3.85",
       satScore: "9999",
       actScore: "36",
+      greScore: "Did not take",
       graduationDate: "2025-05",
       graduationDateExact: "2024-02-29",
       canPerformEssentialFunctions: "yes",
@@ -146,6 +148,7 @@ describe("Chrome extension profile storage", () => {
     });
 
     expect(profile.firstName).toBe("Jane");
+    expect(profile.nativeFullName).toBe("Jane Q. Doe");
     expect(profile.workAuthorization).toBe("");
     expect(profile.requiresSponsorship).toBe("no");
     expect(profile.country).toBe("United States");
@@ -154,6 +157,7 @@ describe("Chrome extension profile storage", () => {
     expect(profile.undergraduateGpa).toBe("3.85");
     expect(profile.satScore).toBe("");
     expect(profile.actScore).toBe("36");
+    expect(profile.greScore).toBe("Did not take");
     expect(profile.graduationDate).toBe("2025-05");
     expect(profile.graduationDateExact).toBe("2024-02-29");
     expect(profile.canPerformEssentialFunctions).toBe("yes");
@@ -490,6 +494,67 @@ describe("Chrome extension field matching", () => {
     expect(linkedIn?.definition.key).toBe("linkedinUrl");
     expect(github?.definition.key).toBe("githubUrl");
     expect(exceptionalWork?.definition.key).toBe("exceptionalWork");
+  });
+
+  it("recognizes the SpaceXAI application wording", () => {
+    const fields = [
+      ["Preferred First Name", "text", "preferredName"],
+      [
+        "Full Legal Name in Native Language (e.g. Chinese Characters, Cyrillic, Farsi etc)",
+        "text",
+        "nativeFullName",
+      ],
+      ["X Profile", "text", "xUrl"],
+      [
+        "Google Scholar If you have a Google Scholar page, please provide its URL.",
+        "text",
+        "googleScholarUrl",
+      ],
+      [
+        "Please select the month you will be able to start your internship.",
+        "combobox",
+        "availableStartMonth",
+      ],
+      [
+        "Please provide a summary highlighting your top two exceptional academic and/or professional accomplishments.",
+        "textarea",
+        "exceptionalWork",
+      ],
+    ];
+
+    for (const [label, controlKind, expectedKey] of fields) {
+      expect(
+        matcher.findBestDefinition(
+          {
+            signals: [{ text: label, weight: 1, source: "label" }],
+            controlKind,
+          },
+          profileSchema.fields,
+        )?.definition.key,
+      ).toBe(expectedKey);
+    }
+
+    expect(
+      profileSchema.buildEffectiveProfile({
+        availableStartDate: "2027-01-15",
+      }).availableStartMonth,
+    ).toBe("January");
+  });
+
+  it("keeps explicit not-taken academic score answers", () => {
+    expect(
+      profileSchema.sanitizeStoredProfile({
+        undergraduateGpa: "N/A",
+        satScore: "Did not take",
+        actScore: "Did not Take",
+        greScore: "Not taken",
+      }),
+    ).toMatchObject({
+      undergraduateGpa: "N/A",
+      satScore: "Did not take",
+      actScore: "Did not Take",
+      greScore: "Not taken",
+    });
   });
 
   it("resolves composite and paraphrased applicant fields without exact labels", () => {
