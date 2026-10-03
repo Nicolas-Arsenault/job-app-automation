@@ -61,4 +61,30 @@ describe("manual application tracking", () => {
     expect(await prisma.job.count()).toBe(1);
     expect(result.application.applicationStatus).toBe("interviewing");
   });
+
+  it("keeps similar metadata separate when the requisition URL differs", async () => {
+    await prisma.job.create({
+      data: {
+        dedupeKey: "unknown:first",
+        title: "Software Engineer Intern",
+        company: "Acme",
+        location: "Toronto, Ontario, Canada",
+        applyUrl: "https://careers.example.com/jobs/first-opening",
+        country: "CA",
+        fingerprint: "same-looking-role",
+      },
+    });
+
+    const result = await addManualApplication({
+      company: "Acme",
+      title: "Software Engineer Intern",
+      applyUrl: "https://careers.example.com/jobs/second-opening",
+      location: "Toronto, Ontario, Canada",
+      applicationStatus: "applied",
+      appliedAt: new Date("2026-10-03T12:00:00.000Z"),
+    });
+
+    expect(result.created).toBe(true);
+    expect(await prisma.job.count()).toBe(2);
+  });
 });

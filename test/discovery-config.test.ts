@@ -1,8 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { classifyEntryLevel, isSoftwareRole } from "../lib/discovery/entryLevel";
-import { DEFAULT_DISCOVERY_CONFIG, toEntryLevelOptions } from "../lib/discovery/config";
+import {
+  DEFAULT_DISCOVERY_CONFIG,
+  DEFAULT_WATCHED_COMPANIES,
+  toEntryLevelOptions,
+} from "../lib/discovery/config";
 
 describe("config-driven classifier", () => {
+  it("ships a broad, editable mid-tech watchlist", () => {
+    expect(DEFAULT_DISCOVERY_CONFIG.watchedCompanies).toEqual(DEFAULT_WATCHED_COMPANIES);
+    expect(DEFAULT_WATCHED_COMPANIES.length).toBeGreaterThanOrEqual(15);
+    expect(DEFAULT_WATCHED_COMPANIES.map((company) => company.name)).toEqual(
+      expect.arrayContaining(["IBM", "SAP", "ServiceNow", "Lightspeed", "OpenText"]),
+    );
+  });
+
   it("defaults keep only software internships", () => {
     const opts = toEntryLevelOptions(DEFAULT_DISCOVERY_CONFIG);
     expect(classifyEntryLevel({ title: "Software Engineer I" }, opts).isEntryLevel).toBe(false);

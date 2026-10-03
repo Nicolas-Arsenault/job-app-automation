@@ -45,7 +45,7 @@ const BIGTECH = new Set(
     "Robinhood", "Dropbox", "Pinterest", "Cloudflare", "Lyft", "Airbnb",
     "Roblox", "HubSpot", "Datadog", "Waymo", "Apple", "Tesla", "Google",
     "Shopify", "Meta", "LinkedIn", "Rivian", "Cisco",
-    "Ubisoft", "Bosch", "Visa",
+    "Ubisoft", "Bosch", "Visa", "Reddit", "Block",
   ].map(norm),
 );
 
@@ -54,7 +54,13 @@ const BIGTECH = new Set(
 const MIDTECH = new Set(
   [
     "Coveo", "Ciena", "Kinaxis", "Autodesk", "Nokia", "Ericsson", "Clio",
-    "BlackBerry",
+    "BlackBerry", "MongoDB", "Twilio", "GitLab", "Elastic", "Okta",
+    "Samsara", "Toast", "Brex", "Asana", "Squarespace", "Duolingo",
+    "Instacart", "Affirm", "Coursera", "Rubrik", "Gusto", "Flexport",
+    "StackAdapt", "TouchBistro", "Thinkific", "Verkada", "SoFi", "Chime",
+    "Roku", "Grafana Labs", "CircleCI", "Cockroach Labs", "PagerDuty",
+    "New Relic", "Webflow", "Box", "Klaviyo", "D2L", "Wattpad", "Waabi",
+    "Jobber",
   ].map(norm),
 );
 

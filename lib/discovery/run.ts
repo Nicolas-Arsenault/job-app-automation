@@ -62,6 +62,10 @@ export interface DiscoveryRunResult {
   lifecycle: AvailabilityReconciliationResult;
 }
 
+function politePause(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function dedupeKeyFor(p: DiscoveryPosting): string {
   if (p.externalId) return `${p.system}:${p.externalId}`;
   const h = createHash("sha1")
@@ -74,12 +78,9 @@ function dedupeKeyFor(p: DiscoveryPosting): string {
   return `fp:${h}`;
 }
 
-// Cross-source fingerprint: the same open role often appears on both a company's
-// own career site AND on an aggregator board. This coarse key (company + title +
-// country, ignoring location formatting) lets us recognize that pair and keep a
-// single card. It is deliberately NOT unique — one employer legitimately posts
-// the same title in several cities (distinct reqs, same system), so we only ever
-// dedupe on it ACROSS different discovery systems.
+// Search/display fingerprint only. It is deliberately not an identity key:
+// employers legitimately publish multiple requisitions with the same title and
+// country, and merging those would risk hiding an opening.
 function fingerprintFor(p: DiscoveryPosting): string {
   return createHash("sha1")
     .update(
@@ -94,7 +95,7 @@ function fingerprintFor(p: DiscoveryPosting): string {
 
 interface ExistingPosting {
   id: string;
-  kind: "exact" | "canonical-url" | "cross-source";
+  kind: "exact" | "canonical-url";
   availabilityStatus: string;
   applyUrl: string;
   discoverySystem: string | null;
@@ -114,7 +115,6 @@ const existingPostingSelect = {
 async function findExistingPosting(
   p: DiscoveryPosting,
   dedupeKey = dedupeKeyFor(p),
-  fingerprint = fingerprintFor(p),
 ): Promise<ExistingPosting | null> {
   const exact = await prisma.job.findUnique({
     where: { dedupeKey },
@@ -139,24 +139,7 @@ async function findExistingPosting(
     if (sameUrl) return { ...sameUrl, kind: "canonical-url" };
   }
 
-  const isBoard = p.system === "githubboard";
-  const preferred = await prisma.job.findFirst({
-    where: isBoard
-      ? { fingerprint, discoverySystem: { not: "githubboard" } }
-      : { fingerprint, discoverySystem: "githubboard" },
-    orderBy: { firstSeenAt: "asc" },
-    select: existingPostingSelect,
-  });
-  if (preferred) return { ...preferred, kind: "cross-source" };
-
-  const crossSource = await prisma.job.findFirst({
-    where: isBoard
-      ? { fingerprint }
-      : { fingerprint, discoverySystem: { not: p.system } },
-    orderBy: { firstSeenAt: "asc" },
-    select: existingPostingSelect,
-  });
-  return crossSource ? { ...crossSource, kind: "cross-source" } : null;
+  return null;
 }
 
 function confirmedOpenData(
@@ -265,20 +248,15 @@ async function persist(
     return "updated";
   }
 
-  // 2. Same role already found by its job-specific canonical URL, or via a
-  //    DIFFERENT source. A GitHub aggregator board
-  //    re-lists roles that also live on a company's own site (and across boards).
-  //    Board postings therefore dedupe against ANY existing card with the same
-  //    fingerprint; native company postings only dedupe across a *different*
-  //    system, so an employer's distinct same-title reqs (same system) are kept.
-  //    Company sites run before boards, so the richer native card normally wins.
-  //    Promote an older board-only row when a native source is added later.
-  if (existing?.kind === "canonical-url" || existing?.kind === "cross-source") {
+  // 2. Same job-specific canonical URL. This is intentionally the only
+  //    cross-source merge signal: matching company/title/country is not enough
+  //    because employers often have several distinct requisitions with the same
+  //    title. When identity is uncertain we keep both rows to protect recall.
+  if (existing?.kind === "canonical-url") {
     const promoteNative =
       p.system !== "githubboard" &&
       existing.discoverySystem === "githubboard";
     const refreshCanonicalUrlMatch =
-      existing.kind === "canonical-url" &&
       !(p.system === "githubboard" && existing.discoverySystem !== "githubboard");
     await prisma.job.update({
       where: { id: existing.id },
@@ -558,7 +536,11 @@ export async function runDiscovery(opts?: {
 }): Promise<DiscoveryRunResult> {
   const cycleStartedAt = new Date();
   const onlyEntryLevel = opts?.onlyEntryLevel ?? true;
-  const concurrency = opts?.concurrency ?? 4;
+  // Public ATS endpoints are shared infrastructure. Two concurrent company
+  // boards plus a small gap between batches keeps broad coverage gentle; a
+  // two-hour discovery interval makes the extra seconds immaterial.
+  const concurrency = opts?.concurrency ?? 2;
+  const pacingMs = process.env.NODE_ENV === "test" ? 0 : 250;
   const config = opts?.config ?? (await getDiscoveryConfig());
   const ingestOpts: IngestOptions = {
     entryOptions: toEntryLevelOptions(config),
@@ -606,12 +588,19 @@ export async function runDiscovery(opts?: {
       results.push(r);
       opts?.onProgress?.(r);
     }
+    if (pacingMs > 0 && i + concurrency < companies.length) {
+      await politePause(pacingMs);
+    }
   }
 
-  for (const a of aggregators) {
+  for (let index = 0; index < aggregators.length; index++) {
+    const a = aggregators[index];
     const r = await runCompany(a, onlyEntryLevel, ingestOpts, ctx);
     results.push(r);
     opts?.onProgress?.(r);
+    if (pacingMs > 0 && index + 1 < aggregators.length) {
+      await politePause(pacingMs);
+    }
   }
 
   const lifecycle =

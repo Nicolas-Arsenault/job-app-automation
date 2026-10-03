@@ -69,6 +69,10 @@ const WORKDAY_REQUISITION_SUFFIX_RE = /(?:^|[_-])(?:r|jr|req)[-_]?\d{4,}(?:-\d+)
 export function isJobSpecificApplyUrl(url: string): boolean {
   try {
     const parsed = new URL(normalizeUrl(url));
+    const atsType = detectAts(parsed.toString());
+    if (atsType !== "unknown" && extractExternalId(atsType, parsed.toString())) {
+      return true;
+    }
     for (const [name, value] of parsed.searchParams) {
       if (JOB_ID_QUERY_PARAM_RE.test(name) && value.trim().length > 0) return true;
     }
@@ -164,7 +168,15 @@ export function canonicalize(n: NormalizedJob): Canonical {
     .update([slug(n.company), normalizeTitle(n.title), slug(n.location || "")].join("|"))
     .digest("hex");
   const fingerprint = `fp:${fpHash}`;
-  const dedupeKey =
-    atsType !== "unknown" && externalId ? `${atsType}:${externalId}` : fingerprint;
+  const conservativeHash = createHash("sha1")
+    .update(
+      externalId
+        ? [applyUrl, externalId].join("|")
+        : [applyUrl, slug(n.company), normalizeTitle(n.title), slug(n.location || "")].join("|"),
+    )
+    .digest("hex");
+  const dedupeKey = atsType !== "unknown" && externalId
+    ? `${atsType}:${externalId}`
+    : `source:${conservativeHash}`;
   return { dedupeKey, atsType, externalId, applyUrl, fingerprint };
 }

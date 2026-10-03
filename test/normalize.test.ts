@@ -153,11 +153,23 @@ describe("canonicalize (dedup identity)", () => {
     expect(second.dedupeKey).toBe(first.dedupeKey);
   });
 
-  it("falls back to a fingerprint key for unknown ATS", () => {
+  it("uses a conservative source identity for an unknown ATS", () => {
     const c = canonicalize(
       job({ applyUrl: "https://careers.acme.com/1", atsType: undefined, externalId: null }),
     );
-    expect(c.dedupeKey.startsWith("fp:")).toBe(true);
+    expect(c.dedupeKey.startsWith("source:")).toBe(true);
+    expect(c.dedupeKey).not.toBe(c.fingerprint);
+  });
+
+  it("does not merge unknown-ATS postings from different URLs based on metadata", () => {
+    const first = canonicalize(
+      job({ applyUrl: "https://careers.acme.com/req/one", atsType: undefined, externalId: null }),
+    );
+    const second = canonicalize(
+      job({ applyUrl: "https://careers.acme.com/req/two", atsType: undefined, externalId: null }),
+    );
+    expect(first.fingerprint).toBe(second.fingerprint);
+    expect(first.dedupeKey).not.toBe(second.dedupeKey);
   });
 
   it("gives reposts (new id, same role) the same fingerprint", () => {

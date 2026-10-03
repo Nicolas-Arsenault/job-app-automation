@@ -55,8 +55,8 @@ function discoveryFingerprint(
 
 /**
  * Add a user-reported application without creating a second copy of a role the
- * discovery pipeline already knows. Exact ATS identity/URL wins, followed by
- * the same cross-source fingerprint used by discovery.
+ * discovery pipeline already knows. Only exact ATS identity or canonical URL
+ * is sufficient; similar title/company metadata must not hide another req.
  */
 export async function addManualApplication(input: ManualApplicationInput) {
   const company = canonicalCompanyName(input.company);
@@ -75,7 +75,6 @@ export async function addManualApplication(input: ManualApplicationInput) {
       OR: [
         { dedupeKey: canonical.dedupeKey },
         { applyUrl: canonical.applyUrl },
-        { fingerprint },
       ],
     },
     orderBy: { firstSeenAt: "asc" },

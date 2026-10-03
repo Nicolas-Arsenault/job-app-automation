@@ -73,6 +73,31 @@ export const DEFAULT_YC_CONFIG: YcConfig = {
   concurrency: 8,
 };
 
+// Broad mid-market fallback. These sites are probed gently for links to public
+// Greenhouse/Lever/Ashby/SmartRecruiters boards, then cached (30 days for hits,
+// 7 days for misses). They are not crawled every two hours.
+export const DEFAULT_WATCHED_COMPANIES: WatchedCompany[] = [
+  { name: "AMD", website: "https://www.amd.com" },
+  { name: "Intel", website: "https://www.intel.com" },
+  { name: "Qualcomm", website: "https://www.qualcomm.com" },
+  { name: "IBM", website: "https://www.ibm.com" },
+  { name: "Oracle", website: "https://www.oracle.com" },
+  { name: "SAP", website: "https://www.sap.com" },
+  { name: "ServiceNow", website: "https://www.servicenow.com" },
+  { name: "Snowflake", website: "https://www.snowflake.com" },
+  { name: "Atlassian", website: "https://www.atlassian.com" },
+  { name: "Lightspeed", website: "https://www.lightspeedhq.com" },
+  { name: "OpenText", website: "https://www.opentext.com" },
+  { name: "PointClickCare", website: "https://pointclickcare.com" },
+  { name: "Dayforce", website: "https://www.dayforce.com" },
+  { name: "ApplyBoard", website: "https://www.applyboard.com" },
+  { name: "Benevity", website: "https://benevity.com" },
+  { name: "Geotab", website: "https://www.geotab.com" },
+  { name: "Arctic Wolf", website: "https://arcticwolf.com" },
+  { name: "FreshBooks", website: "https://www.freshbooks.com" },
+  { name: "Xanadu", website: "https://www.xanadu.ai" },
+];
+
 export const DEFAULT_DISCOVERY_CONFIG: DiscoveryConfigData = {
   countries: ["US", "CA"],
   maxYoE: 2,
@@ -85,7 +110,7 @@ export const DEFAULT_DISCOVERY_CONFIG: DiscoveryConfigData = {
   disabledSources: [],
   goldenJobs: DEFAULT_GOLDEN_JOB_CONFIG,
   yc: DEFAULT_YC_CONFIG,
-  watchedCompanies: [],
+  watchedCompanies: DEFAULT_WATCHED_COMPANIES,
 };
 
 export function normalizeDiscoveryConfig(
