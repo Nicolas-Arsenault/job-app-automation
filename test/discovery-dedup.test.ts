@@ -119,4 +119,61 @@ describe("cross-source dedup (discovery persist)", () => {
     expect(await prisma.job.count()).toBe(1);
     expect((await prisma.job.findFirstOrThrow()).company).toBe("Uber");
   });
+
+  it("dedupes title variants that point at the same job-specific URL", async () => {
+    const applyUrl = "https://job-boards.greenhouse.io/acme/jobs/8675309002";
+    await ingestPostings(
+      [posting({ title: "2027 Internship - Software Engineer", externalId: "8675309002", applyUrl })],
+      false,
+    );
+    await ingestPostings(
+      [
+        posting({
+          title: "Software Engineer Intern - Backend",
+          system: "githubboard",
+          externalId: "board-8675309002",
+          applyUrl: `${applyUrl}?utm_source=community`,
+        }),
+      ],
+      false,
+    );
+
+    expect(await prisma.job.count()).toBe(1);
+    expect(await prisma.job.findFirstOrThrow()).toMatchObject({
+      title: "2027 Internship - Software Engineer",
+      discoverySystem: "greenhouse",
+      applyUrl,
+    });
+  });
+
+  it("dedupes changed source IDs when the canonical job URL is unchanged", async () => {
+    const applyUrl = "https://apply.careers.microsoft.com/careers/job/1970393556922922";
+    await ingestPostings(
+      [posting({ system: "microsoft", externalId: "old-id", applyUrl })],
+      false,
+    );
+    await ingestPostings(
+      [posting({ system: "microsoft", externalId: "new-id", applyUrl })],
+      false,
+    );
+
+    expect(await prisma.job.count()).toBe(1);
+    expect(await prisma.job.findFirstOrThrow()).toMatchObject({
+      dedupeKey: "microsoft:new-id",
+      externalId: "new-id",
+    });
+  });
+
+  it("does not dedupe unrelated roles that share a generic careers page", async () => {
+    const applyUrl = "https://careers.example.com/search";
+    await ingestPostings(
+      [
+        posting({ title: "Backend Engineer Intern", externalId: "backend", applyUrl }),
+        posting({ title: "Frontend Engineer Intern", externalId: "frontend", applyUrl }),
+      ],
+      false,
+    );
+
+    expect(await prisma.job.count()).toBe(2);
+  });
 });

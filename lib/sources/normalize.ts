@@ -59,6 +59,33 @@ export function normalizeUrl(url: string): string {
   }
 }
 
+const JOB_ID_QUERY_PARAM_RE = /^(?:gh_jid|job_?id|jid|requisition_?id|req_?id)$/i;
+const JOB_ID_PATH_SEGMENT_RE = /^(?:[a-z]{0,4}[-_])?\d{5,}(?:-\d+)?$/i;
+const WORKDAY_REQUISITION_SUFFIX_RE = /(?:^|[_-])(?:r|jr|req)[-_]?\d{4,}(?:-\d+)?$/i;
+
+// Exact URL equality is a strong dedupe signal only when the URL identifies a
+// particular requisition. Some feeds link every role to the same generic
+// careers/search page, so those URLs must not collapse unrelated jobs.
+export function isJobSpecificApplyUrl(url: string): boolean {
+  try {
+    const parsed = new URL(normalizeUrl(url));
+    for (const [name, value] of parsed.searchParams) {
+      if (JOB_ID_QUERY_PARAM_RE.test(name) && value.trim().length > 0) return true;
+    }
+
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    return segments.some(
+      (segment) =>
+        UUID_RE.test(segment) ||
+        JOB_ID_PATH_SEGMENT_RE.test(segment) ||
+        WORKDAY_REQUISITION_SUFFIX_RE.test(segment) ||
+        /^(?:job|req|jr)[-_]?\d{4,}$/i.test(segment),
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Lowercase, strip accents/punctuation, collapse whitespace.
 function slug(s: string): string {
   return (s || "")

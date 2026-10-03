@@ -86,6 +86,7 @@ model Job {
   @@index([country])
   @@index([isEntryLevel])
   @@index([fingerprint])
+  @@index([applyUrl])
   @@index([applicationStatus])
   @@index([fitScore])
   @@index([availabilityStatus])

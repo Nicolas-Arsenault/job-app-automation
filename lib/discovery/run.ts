@@ -6,7 +6,11 @@ import { classifyEntryLevel, type EntryLevelOptions } from "./entryLevel";
 import { enrich, type Enrichment } from "./enrich";
 import { getDiscoveryConfig, toEntryLevelOptions, type DiscoveryConfigData } from "./config";
 import { DISCOVERY_SOURCES, type ApiCompany } from "./companies";
-import { detectAts, normalizeUrl } from "../sources/normalize";
+import {
+  detectAts,
+  isJobSpecificApplyUrl,
+  normalizeUrl,
+} from "../sources/normalize";
 import {
   JOB_AVAILABILITY,
   beginDiscoverySourceRun,
@@ -90,7 +94,7 @@ function fingerprintFor(p: DiscoveryPosting): string {
 
 interface ExistingPosting {
   id: string;
-  kind: "exact" | "cross-source";
+  kind: "exact" | "canonical-url" | "cross-source";
   availabilityStatus: string;
   applyUrl: string;
   discoverySystem: string | null;
@@ -117,6 +121,23 @@ async function findExistingPosting(
     select: existingPostingSelect,
   });
   if (exact) return { ...exact, kind: "exact" };
+
+  const applyUrl = normalizeUrl(p.applyUrl);
+  if (isJobSpecificApplyUrl(applyUrl)) {
+    const preferredByUrl = await prisma.job.findFirst({
+      where: { applyUrl, discoverySystem: { not: "githubboard" } },
+      orderBy: { firstSeenAt: "asc" },
+      select: existingPostingSelect,
+    });
+    const sameUrl =
+      preferredByUrl ??
+      (await prisma.job.findFirst({
+        where: { applyUrl },
+        orderBy: { firstSeenAt: "asc" },
+        select: existingPostingSelect,
+      }));
+    if (sameUrl) return { ...sameUrl, kind: "canonical-url" };
+  }
 
   const isBoard = p.system === "githubboard";
   const preferred = await prisma.job.findFirst({
@@ -244,20 +265,24 @@ async function persist(
     return "updated";
   }
 
-  // 2. Same role already found via a DIFFERENT source. A GitHub aggregator board
+  // 2. Same role already found by its job-specific canonical URL, or via a
+  //    DIFFERENT source. A GitHub aggregator board
   //    re-lists roles that also live on a company's own site (and across boards).
   //    Board postings therefore dedupe against ANY existing card with the same
   //    fingerprint; native company postings only dedupe across a *different*
   //    system, so an employer's distinct same-title reqs (same system) are kept.
   //    Company sites run before boards, so the richer native card normally wins.
   //    Promote an older board-only row when a native source is added later.
-  if (existing?.kind === "cross-source") {
+  if (existing?.kind === "canonical-url" || existing?.kind === "cross-source") {
     const promoteNative =
       p.system !== "githubboard" &&
       existing.discoverySystem === "githubboard";
+    const refreshCanonicalUrlMatch =
+      existing.kind === "canonical-url" &&
+      !(p.system === "githubboard" && existing.discoverySystem !== "githubboard");
     await prisma.job.update({
       where: { id: existing.id },
-      data: promoteNative
+      data: promoteNative || refreshCanonicalUrlMatch
         ? {
             dedupeKey,
             ...data,
@@ -297,7 +322,9 @@ async function recordExistingObservation(
   const direct = sourceRun?.descriptor.positiveEvidence !== "secondary";
   const applyUrl = normalizeUrl(p.applyUrl);
   const exactUpdate =
-    direct && existing.kind === "exact" && markNotEntryLevel
+    direct &&
+    (existing.kind === "exact" || existing.kind === "canonical-url") &&
+    markNotEntryLevel
       ? {
           title: p.title,
           company: canonicalCompanyName(p.company),
@@ -312,7 +339,7 @@ async function recordExistingObservation(
       : {};
   const verificationCache =
     direct &&
-    existing.kind === "exact" &&
+    (existing.kind === "exact" || existing.kind === "canonical-url") &&
     existing.applyUrl !== applyUrl
       ? { lastVerifiedAt: null, lastVerificationResult: null }
       : {};

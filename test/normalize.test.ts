@@ -4,6 +4,7 @@ import {
   normalizeUrl,
   extractExternalId,
   canonicalize,
+  isJobSpecificApplyUrl,
 } from "../lib/sources/normalize";
 import type { NormalizedJob } from "../lib/sources/types";
 
@@ -18,6 +19,32 @@ describe("detectAts", () => {
     expect(detectAts("https://vention.na.teamtailor.com/jobs/123")).toBe("teamtailor");
     expect(detectAts("https://example.com/careers/1")).toBe("unknown");
     expect(detectAts("not a url")).toBe("unknown");
+  });
+});
+
+describe("isJobSpecificApplyUrl", () => {
+  it("recognizes common path and query requisition identifiers", () => {
+    expect(
+      isJobSpecificApplyUrl("https://careers.example.com/jobs?gh_jid=8675309002"),
+    ).toBe(true);
+    expect(
+      isJobSpecificApplyUrl("https://example.com/careers/job/1970393556922922"),
+    ).toBe(true);
+    expect(
+      isJobSpecificApplyUrl(
+        "https://jobs.lever.co/acme/12345678-1234-1234-1234-1234567890ab",
+      ),
+    ).toBe(true);
+    expect(
+      isJobSpecificApplyUrl(
+        "https://acme.wd5.myworkdayjobs.com/Careers/job/Ottawa/Software-Intern_R031631",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects generic careers and search pages", () => {
+    expect(isJobSpecificApplyUrl("https://careers.example.com/jobs")).toBe(false);
+    expect(isJobSpecificApplyUrl("https://careers.example.com/search?team=engineering")).toBe(false);
   });
 });
 

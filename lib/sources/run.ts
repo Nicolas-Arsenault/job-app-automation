@@ -1,7 +1,7 @@
 import { prisma } from "../db";
 import { canonicalCompanyName } from "../company-names";
 import { getAdapter } from "./registry";
-import { canonicalize } from "./normalize";
+import { canonicalize, isJobSpecificApplyUrl } from "./normalize";
 import { scoreJob, type Criteria } from "../matching/score";
 import { getCriteria } from "../settings";
 
@@ -78,7 +78,14 @@ export async function runSource(sourceId: string, criteria?: Criteria): Promise<
       const isWorkday = c.atsType === "workday";
       const confirmsOpen = ["greenhouse", "lever", "ashby"].includes(source.kind);
 
-      const existing = await prisma.job.findUnique({ where: { dedupeKey: c.dedupeKey } });
+      const existing =
+        (await prisma.job.findUnique({ where: { dedupeKey: c.dedupeKey } })) ??
+        (isJobSpecificApplyUrl(c.applyUrl)
+          ? await prisma.job.findFirst({
+              where: { applyUrl: c.applyUrl },
+              orderBy: { firstSeenAt: "asc" },
+            })
+          : null);
       const verificationCache =
         existing && existing.applyUrl !== c.applyUrl
           ? { lastVerifiedAt: null, lastVerificationResult: null }
@@ -108,7 +115,10 @@ export async function runSource(sourceId: string, criteria?: Criteria): Promise<
       };
 
       const job = existing
-        ? await prisma.job.update({ where: { id: existing.id }, data: base })
+        ? await prisma.job.update({
+            where: { id: existing.id },
+            data: { dedupeKey: c.dedupeKey, ...base },
+          })
         : await prisma.job.create({
             data: { dedupeKey: c.dedupeKey, ...base, raw: safeStringify(n.raw ?? n) },
           });

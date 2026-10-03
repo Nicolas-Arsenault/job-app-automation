@@ -30,7 +30,8 @@
     "discovery:verify": "tsx scripts/verify-queries.ts",
     "discover": "tsx scripts/discover.ts",
     "discover:browser": "tsx scripts/discover.ts --browser",
-    "companies:dedupe": "tsx scripts/dedupe-companies.ts"
+    "companies:dedupe": "tsx scripts/dedupe-companies.ts",
+    "jobs:dedupe": "tsx scripts/dedupe-jobs.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
