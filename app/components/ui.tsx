@@ -7,19 +7,19 @@ import {
 
 export const cls = {
   card:
-    "rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900",
+    "rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.045)] dark:border-slate-800 dark:bg-slate-900",
   cardTight:
-    "rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900",
+    "rounded-2xl border border-slate-200/80 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-slate-800 dark:bg-slate-900",
   btnPrimary:
-    "rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50",
+    "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-emerald-950 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-emerald-400 hover:shadow-md disabled:opacity-50",
   btn:
-    "rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700",
+    "rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
   btnDanger:
     "rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-gray-800 dark:hover:bg-red-950",
   btnGreen:
-    "rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50",
+    "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-emerald-950 transition-all hover:bg-emerald-400 disabled:opacity-50",
   input:
-    "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500",
+    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:ring-emerald-900/40",
   label: "block text-sm font-medium text-gray-700 dark:text-gray-300",
   chip:
     "inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300",
@@ -252,10 +252,11 @@ export function SkillChips({ skills, limit = 8 }: { skills: string[]; limit?: nu
 
 export function PageHeader({ title, subtitle, children }: { title: string; subtitle?: string; children?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>}
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="max-w-3xl">
+        <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400"><span className="h-px w-5 bg-emerald-400" /> Your workspace</div>
+        <h1 className="text-3xl font-black tracking-[-0.04em] text-slate-950 sm:text-4xl dark:text-white">{title}</h1>
+        {subtitle && <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{subtitle}</p>}
       </div>
       {children}
     </div>

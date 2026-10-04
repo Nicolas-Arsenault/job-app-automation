@@ -110,9 +110,9 @@ function hasActiveFilters(filters: FilterState): boolean {
 
 function LoadingRows() {
   return (
-    <div className="space-y-2" aria-label="Loading jobs">
+    <div className="space-y-3" aria-label="Loading jobs">
       {Array.from({ length: 6 }, (_, index) => (
-        <div key={index} className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div key={index} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 space-y-2">
               <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-800" />
@@ -453,8 +453,8 @@ export default function JobsPage() {
   return (
     <div>
       <PageHeader
-        title="Jobs"
-        subtitle={`${scopeSummary} Confirmed closures remain in Archived closed so saved and applied history is never lost.`}
+        title="Find your next fit"
+        subtitle={`${scopeSummary.split(".")[0]}. Fresh roles and thoughtful fit signals, all in one place.`}
       >
         <ScanButton onComplete={handleScrapeComplete} />
       </PageHeader>
@@ -466,7 +466,7 @@ export default function JobsPage() {
       )}
 
       <div
-        className="mb-3 flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-800 dark:bg-gray-900"
+        className="mb-3 inline-flex max-w-full gap-1 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
         data-testid="availability-tabs"
       >
         {AVAILABILITY_VIEWS.map((view) => (
@@ -475,10 +475,10 @@ export default function JobsPage() {
             type="button"
             onClick={() => handleAvailabilityChange(view.value)}
             className={
-              "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-indigo-400 dark:focus:ring-offset-gray-900 " +
+              "min-w-fit flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900 " +
               (availability === view.value
-                ? "bg-white text-indigo-700 shadow-sm dark:bg-gray-800 dark:text-indigo-300"
-                : "text-gray-500 hover:bg-white hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200")
+                ? "bg-emerald-100 text-emerald-950 shadow-sm dark:bg-emerald-400/15 dark:text-emerald-200"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200")
             }
           >
             {view.label}
@@ -486,17 +486,17 @@ export default function JobsPage() {
         ))}
       </div>
 
-      <div className="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-800 dark:bg-gray-900">
+      <div className="mb-4 ml-2 inline-flex gap-1 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         {COUNTRIES.map((countryOption) => (
           <button
             key={countryOption.value}
             type="button"
             onClick={() => handleCountryChange(countryOption.value)}
             className={
-              "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-indigo-400 dark:focus:ring-offset-gray-900 " +
+              "flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900 " +
               (country === countryOption.value
-                ? "bg-white text-indigo-700 shadow-sm dark:bg-gray-800 dark:text-indigo-300"
-                : "text-gray-500 hover:bg-white hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200")
+                ? "bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-950"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200")
             }
           >
             {countryOption.label}
@@ -541,23 +541,23 @@ export default function JobsPage() {
         </div>
       )}
 
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
         {!loading || jobs.length > 0 ? (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
             {jobs.length} {availability === "closed" ? "archived " : ""}posting
             {jobs.length === 1 ? "" : "s"} {availability === "closed" ? "" : "in queue"}
             {loading ? " · refreshing…" : ""}
           </p>
         ) : (
-          <p className="text-xs text-gray-500 dark:text-gray-400">Loading queue…</p>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Loading your queue…</p>
         )}
         {filtered && (
-          <p className="text-xs text-indigo-600 dark:text-indigo-300">Filters active across {country} postings</p>
+          <p className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Filters active across {country} postings</p>
         )}
       </div>
 
       {availability === "active" && jobs.length > 0 && (
-        <div className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
           <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-200">
             <input
               type="checkbox"
@@ -587,7 +587,7 @@ export default function JobsPage() {
               onClick={openSelected}
               disabled={selectedCount === 0}
               data-testid="open-selected"
-              className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:focus:ring-offset-gray-900"
+              className="inline-flex items-center rounded-xl bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-emerald-950 shadow-sm transition-all hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-slate-900"
             >
               Open{selectedCount > 0 ? ` ${selectedCount}` : ""} selected ↗
             </button>
@@ -616,7 +616,7 @@ export default function JobsPage() {
           {filtered ? " Clear filters to widen the queue." : ""}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {shownJobs.map((job) => (
             <JobCard
               key={job.id}
