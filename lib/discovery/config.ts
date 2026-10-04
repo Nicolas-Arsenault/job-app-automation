@@ -36,6 +36,12 @@ export interface DiscoveryConfigData {
   queryTerms: string[];
   /** Source names (company or board) to skip on a run. Missing = enabled. */
   disabledSources: string[];
+  /**
+   * Employers to keep. Empty means all employers. When populated, direct
+   * sources outside this list are not fetched and aggregator rows outside it
+   * are ignored during ingestion.
+   */
+  companyFocus: string[];
   /** Early-career signals promoted in the queue and guaranteed a Judge floor. */
   goldenJobs: GoldenJobConfig;
   /** Y Combinator directory-expansion source settings (see lib/discovery/yc.ts). */
@@ -163,6 +169,7 @@ export const DEFAULT_DISCOVERY_CONFIG: DiscoveryConfigData = {
   excludeTitleKeywords: [],
   queryTerms: [],
   disabledSources: [],
+  companyFocus: [],
   goldenJobs: DEFAULT_GOLDEN_JOB_CONFIG,
   yc: DEFAULT_YC_CONFIG,
   watchedCompanies: DEFAULT_WATCHED_COMPANIES,
@@ -223,6 +230,7 @@ export function normalizeDiscoveryConfig(
     excludeTitleKeywords: arr(r.excludeTitleKeywords, d.excludeTitleKeywords),
     queryTerms: arr(r.queryTerms, d.queryTerms),
     disabledSources: arr(r.disabledSources, d.disabledSources),
+    companyFocus: arr(r.companyFocus, d.companyFocus),
     goldenJobs: normalizeGoldenJobConfig(r.goldenJobs, d.goldenJobs),
     yc: yc(r.yc),
     watchedCompanies: watchedCompanies(r.watchedCompanies),

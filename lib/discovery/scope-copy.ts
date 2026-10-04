@@ -15,6 +15,8 @@ export interface DiscoveryScopeCopy {
   geographyNeutralSummary: string;
   roleTerms: string[];
   countryNames: string[];
+  countryCodes: string[];
+  companyNames: string[];
 }
 
 const SENTINELS = new Set([
@@ -84,6 +86,10 @@ export function formatDiscoveryScope({
   const countryNames = cleanValues(
     cleanValues(config.countries).map(readableCountry),
   );
+  const countryCodes = cleanValues(config.countries).map((country) =>
+    country.toUpperCase(),
+  );
+  const companyNames = cleanValues(config.companyFocus);
 
   const roles =
     roleTerms.length > 0
@@ -103,13 +109,18 @@ export function formatDiscoveryScope({
       ? "Internships and co-ops are included"
       : "Internships and co-ops are excluded";
   const policySummary = `${experienceSentence(config.maxYoE)}. ${degreeSentence}. ${internshipSentence}.`;
+  const focusSummary = companyNames.length
+    ? ` Discovery is limited to ${companyNames.length} selected employers.`
+    : "";
 
   return {
     headline,
-    summary: `${headline}. ${policySummary}`,
+    summary: `${headline}. ${policySummary}${focusSummary}`,
     geographyNeutralHeadline: roles,
     geographyNeutralSummary: `${roles}. ${policySummary}`,
     roleTerms,
     countryNames,
+    countryCodes,
+    companyNames,
   };
 }

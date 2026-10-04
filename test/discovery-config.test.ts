@@ -3,10 +3,17 @@ import { classifyEntryLevel, isSoftwareRole } from "../lib/discovery/entryLevel"
 import {
   DEFAULT_DISCOVERY_CONFIG,
   DEFAULT_WATCHED_COMPANIES,
+  normalizeDiscoveryConfig,
   toEntryLevelOptions,
 } from "../lib/discovery/config";
 
 describe("config-driven classifier", () => {
+  it("normalizes an optional employer focus without changing the broad default", () => {
+    expect(DEFAULT_DISCOVERY_CONFIG.companyFocus).toEqual([]);
+    expect(normalizeDiscoveryConfig({ companyFocus: [" Shopify ", "", "Nokia"] }).companyFocus)
+      .toEqual(["Shopify", "Nokia"]);
+  });
+
   it("ships a broad, editable mid-tech watchlist", () => {
     expect(DEFAULT_DISCOVERY_CONFIG.watchedCompanies).toEqual(DEFAULT_WATCHED_COMPANIES);
     expect(DEFAULT_WATCHED_COMPANIES.length).toBeGreaterThanOrEqual(15);

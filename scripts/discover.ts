@@ -2,6 +2,8 @@ import { runDiscovery, ingestSourcePostings } from "../lib/discovery/run";
 import { scrapeBrowserCompanies } from "../lib/discovery/browser";
 import { prisma } from "../lib/db";
 import { BROWSER_COMPANIES } from "../lib/discovery/companies";
+import { getDiscoveryConfig, toEntryLevelOptions } from "../lib/discovery/config";
+import { isCompanyFocused } from "../lib/discovery/company-focus";
 import {
   countDiscoverySourceOutcomes,
   describeBrowserSource,
@@ -61,6 +63,12 @@ async function runApi(companies: string[], onlyEntryLevel: boolean) {
 }
 
 async function runBrowser(companies: string[], onlyEntryLevel: boolean) {
+  const config = await getDiscoveryConfig();
+  const selectedCompanies = companies.length
+    ? companies
+    : BROWSER_COMPANIES
+        .filter((company) => isCompanyFocused(company.name, config.companyFocus))
+        .map((company) => company.name);
   console.log(
     `Browser-scraping ${companies.length ? companies.join(", ") : "all browser companies"} ` +
       `(Playwright)…\n`,
@@ -71,7 +79,7 @@ async function runBrowser(companies: string[], onlyEntryLevel: boolean) {
   let caEntry = 0;
   const outcomes: DiscoverySourceOutcome[] = [];
   const results = await scrapeBrowserCompanies({
-    companies: companies.length ? companies : undefined,
+    companies: selectedCompanies,
     onResult: () => {},
   });
   for (const r of results) {
@@ -89,7 +97,12 @@ async function runBrowser(companies: string[], onlyEntryLevel: boolean) {
       r.postings,
       onlyEntryLevel,
       undefined,
-      { sourceWarning: r.warning },
+      {
+        sourceWarning: r.warning,
+        countries: config.countries,
+        companyFocus: config.companyFocus,
+        entryOptions: toEntryLevelOptions(config),
+      },
     );
     created += counts.created;
     updated += counts.updated;

@@ -10,6 +10,7 @@ import {
   type BrowserSystem,
 } from "./companies";
 import { getDiscoveryConfig, toEntryLevelOptions } from "./config";
+import { isCompanyFocused } from "./company-focus";
 import {
   scrapeBrowserCompanies,
   type BrowserScrapeResult,
@@ -287,17 +288,20 @@ function browserResult(
 
 async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> {
   const config = await getDiscoveryConfig();
-  const expandedSourceCount = await discoveredAtsBoardCount();
+  const expandedSourceCount = await discoveredAtsBoardCount(config.companyFocus);
   const disabled = new Set(config.disabledSources.map((source) => source.toLowerCase()));
   const apiSourceCount = DISCOVERY_SOURCES.filter(
     (source) =>
       !disabled.has(source.name.toLowerCase()) &&
-      (source.system !== "watchlist" || config.watchedCompanies.length > 0),
+      (source.system !== "watchlist" || config.watchedCompanies.length > 0) &&
+      (["githubboard", "watchlist", "ycombinator"].includes(source.system) ||
+        isCompanyFocused(source.name, config.companyFocus)),
   ).length + expandedSourceCount;
   const supportedBrowserCompanies = BROWSER_COMPANIES.filter(
     (company) =>
       SCRAPABLE_BROWSER_SYSTEMS.includes(company.system) &&
-      !disabled.has(company.name.toLowerCase()),
+      !disabled.has(company.name.toLowerCase()) &&
+      isCompanyFocused(company.name, config.companyFocus),
   );
   const totalSources = apiSourceCount + supportedBrowserCompanies.length;
   const totalSteps = totalSources + 2;
@@ -385,6 +389,7 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
         counts,
         {
           countries: config.countries,
+          companyFocus: config.companyFocus,
           entryOptions: toEntryLevelOptions(config),
           sourceWarning: result.warning,
         },

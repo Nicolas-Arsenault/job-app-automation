@@ -168,6 +168,9 @@ export default function JobsPage() {
       .then((scope) => {
         if (!active) return;
         setScopeSummary(scope.summary);
+        if (!scope.countryCodes.includes("US") && scope.countryCodes.includes("CA")) {
+          setCountry("CA");
+        }
         setScopeError(null);
       })
       .catch((caught) => {

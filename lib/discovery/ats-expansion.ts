@@ -5,6 +5,7 @@ import { detectAts } from "../sources/normalize";
 import type { ApiCompany } from "./companies";
 import type { DiscoveryPosting, FetchContext } from "./adapters";
 import { fetchCompanyPostings } from "./adapters";
+import { isCompanyFocused } from "./company-focus";
 import { mapPool, type ResolvedSystem } from "./yc";
 
 export type ExpandableAtsSystem =
@@ -390,10 +391,12 @@ export async function validatePendingAtsBoards(
       postings: DiscoveryPosting[],
     ) => Promise<void>;
     now?: Date;
+    /** Validate only boards belonging to the active employer focus. */
+    companyFocus?: string[];
   } = {},
 ): Promise<{ verified: number; failed: number }> {
   const now = options.now ?? new Date();
-  const rows = await prisma.discoveredAtsBoard.findMany({
+  const candidateRows = await prisma.discoveredAtsBoard.findMany({
     where: {
       status: "pending",
       OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
@@ -402,8 +405,14 @@ export async function validatePendingAtsBoards(
     // New community boards are intentionally admitted slowly. Eight boards per
     // two-hour cycle keeps validation useful without creating a burst across
     // third-party ATS infrastructure.
-    ...(options.limit === null ? {} : { take: options.limit ?? 8 }),
   });
+  const focusedRows = candidateRows.filter((row) =>
+    isCompanyFocused(row.company, options.companyFocus),
+  );
+  const rows =
+    options.limit === null
+      ? focusedRows
+      : focusedRows.slice(0, options.limit ?? 8);
   const validate = options.validate ?? fetchCompanyPostings;
   let verified = 0;
   let failed = 0;
@@ -450,6 +459,13 @@ export async function verifiedAtsCompanies(): Promise<ApiCompany[]> {
   return rows.map((row) => asApiCompany(row));
 }
 
-export async function discoveredAtsBoardCount(): Promise<number> {
-  return prisma.discoveredAtsBoard.count({ where: { status: "verified" } });
+export async function discoveredAtsBoardCount(companyFocus?: string[]): Promise<number> {
+  if (!companyFocus?.length) {
+    return prisma.discoveredAtsBoard.count({ where: { status: "verified" } });
+  }
+  const rows = await prisma.discoveredAtsBoard.findMany({
+    where: { status: "verified" },
+    select: { company: true },
+  });
+  return rows.filter((row) => isCompanyFocused(row.company, companyFocus)).length;
 }
