@@ -93,6 +93,31 @@ describe("automatic ATS expansion", () => {
     );
   });
 
+  it("can validate every pending board when the isolated benchmark removes the cap", async () => {
+    const postings = Array.from({ length: 10 }, (_, index) =>
+      posting(`https://jobs.lever.co/company-${index}/job-${index}`, `Company ${index}`),
+    );
+    await observeCommunityAtsBoards(postings, "Benchmark board");
+    const validated: string[] = [];
+    const result = await validatePendingAtsBoards(
+      {
+        countries: ["US", "CA"],
+        internshipsOnly: true,
+      },
+      {
+        limit: null,
+        concurrency: 2,
+        validate: async (company) => {
+          validated.push(company.name);
+          return [];
+        },
+      },
+    );
+    expect(result).toEqual({ verified: 10, failed: 0 });
+    expect(validated).toHaveLength(10);
+    expect(await prisma.discoveredAtsBoard.count({ where: { status: "pending" } })).toBe(0);
+  });
+
   it("records only unsupported employers as a custom-adapter backlog", async () => {
     await observeCommunityAtsBoards(
       [

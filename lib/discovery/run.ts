@@ -287,7 +287,7 @@ async function persist(
         ...confirmedOpenData(sourceRun, existing, applyUrl),
       },
     });
-    recordDiscoveryJobObservation(sourceRun, existing.id);
+    recordDiscoveryJobObservation(sourceRun, existing.id, p.postedAt);
     return "updated";
   }
 
@@ -317,7 +317,7 @@ async function persist(
             ...confirmedOpenData(sourceRun, existing, existing.applyUrl),
           },
     });
-    recordDiscoveryJobObservation(sourceRun, existing.id);
+    recordDiscoveryJobObservation(sourceRun, existing.id, p.postedAt);
     return "updated";
   }
 
@@ -331,7 +331,7 @@ async function persist(
     },
     select: { id: true },
   });
-  recordDiscoveryJobObservation(sourceRun, created.id);
+  recordDiscoveryJobObservation(sourceRun, created.id, p.postedAt);
   return "created";
 }
 
@@ -375,7 +375,7 @@ async function recordExistingObservation(
       ...confirmedOpenData(sourceRun, existing, applyUrl),
     },
   });
-  recordDiscoveryJobObservation(sourceRun, existing.id);
+  recordDiscoveryJobObservation(sourceRun, existing.id, p.postedAt, false);
 }
 
 export interface IngestCounts {
@@ -584,6 +584,10 @@ export async function runDiscovery(opts?: {
   onlyEntryLevel?: boolean;
   concurrency?: number;
   config?: DiscoveryConfigData;
+  /** Benchmark/internal hook: run only dynamically verified ATS boards. */
+  includeStaticSources?: boolean;
+  /** Benchmark/internal hook: validation is orchestrated as its own phase. */
+  validatePendingAts?: boolean;
   onProgress?: (r: CompanyRunResult) => void;
   onLifecycle?: (result: AvailabilityReconciliationResult) => void;
   verify?: PostingVerifier;
@@ -614,7 +618,7 @@ export async function runDiscovery(opts?: {
   // the same public endpoint to be fetched twice in one run.
   await bootstrapCommunityAtsBoards();
   const expandedCompanies = await verifiedAtsCompanies();
-  await validatePendingAtsBoards(ctx);
+  if (opts?.validatePendingAts !== false) await validatePendingAtsBoards(ctx);
   const disabled = new Set(config.disabledSources.map((s) => s.toLowerCase()));
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
   const staticBoardIds = new Set(
@@ -624,7 +628,7 @@ export async function runDiscovery(opts?: {
     }),
   );
   const allSources = [
-    ...DISCOVERY_SOURCES,
+    ...(opts?.includeStaticSources === false ? [] : DISCOVERY_SOURCES),
     ...expandedCompanies.filter(
       (source) => {
         const key = atsCompanyBoardKey(source);

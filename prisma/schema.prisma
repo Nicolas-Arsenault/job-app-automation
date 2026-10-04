@@ -271,6 +271,12 @@ model DiscoveryJobSighting {
   firstSeenAt            DateTime        @default(now())
   lastSeenAt             DateTime        @default(now())
   lastSeenRunId          String
+  // Publication date reported by this specific source. This keeps secondary
+  // board dates separate from employer dates in freshness comparisons.
+  reportedPostedAt       DateTime?
+  // Whether this source's own row passed the internship, role and geography
+  // gates at observation time. Job-level enrichment may change later.
+  eligibleInternship     Boolean         @default(false)
   consecutiveMisses      Int             @default(0)
   lastMissingAt          DateTime?
   lastVerifiedAt         DateTime?
@@ -279,6 +285,8 @@ model DiscoveryJobSighting {
   source                 DiscoverySource @relation(fields: [sourceKey], references: [key], onDelete: Cascade)
 
   @@unique([jobId, sourceKey])
+  @@index([reportedPostedAt])
+  @@index([eligibleInternship])
   @@index([sourceKey, lastSeenRunId])
   @@index([jobId, consecutiveMisses])
 }

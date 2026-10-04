@@ -381,9 +381,14 @@ export function atsCompanyBoardKey(company: ApiCompany): string | null {
 export async function validatePendingAtsBoards(
   ctx: FetchContext,
   options: {
-    limit?: number;
+    /** null validates every pending board (used only by the isolated benchmark). */
+    limit?: number | null;
     concurrency?: number;
     validate?: (company: ApiCompany, ctx: FetchContext) => Promise<DiscoveryPosting[]>;
+    onVerified?: (
+      company: ApiCompany,
+      postings: DiscoveryPosting[],
+    ) => Promise<void>;
     now?: Date;
   } = {},
 ): Promise<{ verified: number; failed: number }> {
@@ -397,14 +402,16 @@ export async function validatePendingAtsBoards(
     // New community boards are intentionally admitted slowly. Eight boards per
     // two-hour cycle keeps validation useful without creating a burst across
     // third-party ATS infrastructure.
-    take: options.limit ?? 8,
+    ...(options.limit === null ? {} : { take: options.limit ?? 8 }),
   });
   const validate = options.validate ?? fetchCompanyPostings;
   let verified = 0;
   let failed = 0;
   await mapPool(rows, options.concurrency ?? 2, async (row) => {
     try {
-      await validate(asApiCompany(row, true), ctx);
+      const company = asApiCompany(row, true);
+      const postings = await validate(company, ctx);
+      await options.onVerified?.(company, postings);
       await prisma.discoveredAtsBoard.update({
         where: { id: row.id },
         data: {
