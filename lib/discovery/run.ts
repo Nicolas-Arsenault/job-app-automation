@@ -7,6 +7,12 @@ import { enrich, type Enrichment } from "./enrich";
 import { getDiscoveryConfig, toEntryLevelOptions, type DiscoveryConfigData } from "./config";
 import { DISCOVERY_SOURCES, type ApiCompany } from "./companies";
 import {
+  bootstrapCommunityAtsBoards,
+  observeCommunityAtsBoards,
+  validatePendingAtsBoards,
+  verifiedAtsCompanies,
+} from "./ats-expansion";
+import {
   detectAts,
   isJobSpecificApplyUrl,
   normalizeUrl,
@@ -93,12 +99,21 @@ function fingerprintFor(p: DiscoveryPosting): string {
     .digest("hex");
 }
 
+function contentHashFor(p: DiscoveryPosting): string {
+  return createHash("sha1")
+    .update([p.title, p.location, p.description].join("|").replace(/\s+/g, " ").trim())
+    .digest("hex");
+}
+
 interface ExistingPosting {
   id: string;
   kind: "exact" | "canonical-url";
   availabilityStatus: string;
   applyUrl: string;
   discoverySystem: string | null;
+  firstPartyFirstSeenAt: Date | null;
+  postedAt: Date | null;
+  employerPostedAt: Date | null;
   lastVerifiedAt: Date | null;
   lastVerificationResult: string | null;
 }
@@ -108,6 +123,9 @@ const existingPostingSelect = {
   availabilityStatus: true,
   applyUrl: true,
   discoverySystem: true,
+  firstPartyFirstSeenAt: true,
+  postedAt: true,
+  employerPostedAt: true,
   lastVerifiedAt: true,
   lastVerificationResult: true,
 } as const;
@@ -202,6 +220,9 @@ async function persist(
   // The apply destination is the reliable signal (a myworkdayjobs.com URL), with
   // the discovery system as a fallback for native Workday scrapes.
   const isWorkday = atsType === "workday" || p.system === "workday";
+  const isSecondary = p.system === "githubboard";
+  const now = new Date();
+  const reopened = existing?.availabilityStatus === JOB_AVAILABILITY.CLOSED && !isSecondary;
 
   const data = {
     atsType,
@@ -213,6 +234,15 @@ async function persist(
     applyUrl,
     description: p.description || null,
     postedAt: p.postedAt,
+    employerPostedAt: isSecondary ? undefined : p.postedAt,
+    sourceReportedAt: isSecondary ? p.postedAt : undefined,
+    contentHash: contentHashFor(p),
+    newnessStatus: reopened
+      ? "reopened_confirmed"
+      : isSecondary
+        ? "secondary_new"
+        : "first_party_new",
+    reopenedAt: reopened ? now : undefined,
     isWorkday, // Workday roles surface only in the flagged Workday list, never the main lists
     country: p.country,
     isEntryLevel: true,
@@ -227,7 +257,7 @@ async function persist(
     sponsorship: enrichment.sponsorship === "unknown" ? null : enrichment.sponsorship,
     skills: enrichment.skills.length ? JSON.stringify(enrichment.skills) : null,
     employmentType: enrichment.employmentType,
-    lastSeenAt: new Date(),
+    lastSeenAt: now,
   };
 
   // 1. Same posting from the same source (stable external id) → update in place.
@@ -240,6 +270,18 @@ async function persist(
       where: { id: existing.id },
       data: {
         ...data,
+        // Never make an unchanged requisition look newer merely because a
+        // relative source label (for example Workday's "Posted Today") moved.
+        postedAt:
+          existing.postedAt && p.postedAt
+            ? new Date(Math.min(existing.postedAt.getTime(), p.postedAt.getTime()))
+            : existing.postedAt ?? p.postedAt,
+        ...(!isSecondary
+          ? { employerPostedAt: existing.employerPostedAt ?? p.postedAt }
+          : {}),
+        ...(!isSecondary && !existing.firstPartyFirstSeenAt
+          ? { firstPartyFirstSeenAt: now }
+          : {}),
         ...verificationCache,
         ...confirmedOpenData(sourceRun, existing, applyUrl),
       },
@@ -264,6 +306,7 @@ async function persist(
         ? {
             dedupeKey,
             ...data,
+            ...(!isSecondary ? { firstPartyFirstSeenAt: now } : {}),
             lastVerifiedAt: null,
             lastVerificationResult: null,
             ...confirmedOpenData(sourceRun, existing, applyUrl),
@@ -281,6 +324,7 @@ async function persist(
     data: {
       dedupeKey,
       ...data,
+      firstPartyFirstSeenAt: isSecondary ? null : now,
       availabilityStatus: JOB_AVAILABILITY.OPEN,
       consecutiveMisses: 0,
     },
@@ -474,6 +518,17 @@ async function runCompany(
       : undefined;
   try {
     const postings = await fetchCompanyPostings(c, { ...ctx, onWarning });
+    if (c.system === "githubboard") {
+      try {
+        await observeCommunityAtsBoards(postings, c.name);
+      } catch (error) {
+        onWarning(
+          `Automatic ATS expansion failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
     await ingestPostings(postings, onlyEntryLevel, res, {
       ...opts,
       sourceRun,
@@ -552,9 +607,27 @@ export async function runDiscovery(opts?: {
     internshipsOnly: config.internshipsOnly,
     watchedCompanies: config.watchedCompanies,
   };
+  // Convert direct ATS links already present in community inventory into
+  // durable candidates. Boards verified before this cycle are polled now; the
+  // bounded validation batch joins the next cycle so validation never causes
+  // the same public endpoint to be fetched twice in one run.
+  await bootstrapCommunityAtsBoards();
+  const expandedCompanies = await verifiedAtsCompanies();
+  await validatePendingAtsBoards(ctx);
   const disabled = new Set(config.disabledSources.map((s) => s.toLowerCase()));
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
-  const targets = DISCOVERY_SOURCES.filter((c) => {
+  const staticBoardIds = new Set(
+    DISCOVERY_SOURCES.flatMap((source) =>
+      source.token ? [`${source.system}:${source.token.toLowerCase()}`] : [],
+    ),
+  );
+  const allSources = [
+    ...DISCOVERY_SOURCES,
+    ...expandedCompanies.filter(
+      (source) => !staticBoardIds.has(`${source.system}:${source.token?.toLowerCase()}`),
+    ),
+  ];
+  const targets = allSources.filter((c) => {
     if (disabled.has(c.name.toLowerCase())) return false;
     if (c.system === "watchlist" && config.watchedCompanies.length === 0) return false;
     if (wanted) return wanted.includes(c.name.toLowerCase());

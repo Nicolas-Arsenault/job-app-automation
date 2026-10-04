@@ -41,7 +41,7 @@ export default async function OverviewPage() {
     ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
     ...ACTIVE_JOB_WHERE,
   } as const;
-  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues] = await Promise.all([
+  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues, atsExpansion, secondaryJobs, directJobs] = await Promise.all([
     getDiscoveryScopeCopy(),
     prisma.job.count({ where: { ...entryWhere, country: "US" } }),
     prisma.job.count({ where: { ...entryWhere, country: "CA" } }),
@@ -74,9 +74,20 @@ export default async function OverviewPage() {
       },
       take: 12,
     }),
+    prisma.discoveredAtsBoard.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    }),
+    prisma.job.count({ where: { ...entryWhere, discoverySystem: "githubboard" } }),
+    prisma.job.count({ where: { ...entryWhere, discoverySystem: { not: "githubboard" } } }),
   ]);
 
-  const companiesCovered = API_COMPANIES.length + BROWSER_COMPANIES.length;
+  const verifiedExpansion = atsExpansion.find((row) => row.status === "verified")?._count._all ?? 0;
+  const pendingExpansion = atsExpansion.find((row) => row.status === "pending")?._count._all ?? 0;
+  const companiesCovered = API_COMPANIES.length + BROWSER_COMPANIES.length + verifiedExpansion;
+  const directCoverage = directJobs + secondaryJobs > 0
+    ? Math.round((directJobs / (directJobs + secondaryJobs)) * 100)
+    : 0;
 
   const byCategory = new Map<JobCategory, number>();
   for (const row of allByCompany) {
@@ -137,9 +148,20 @@ export default async function OverviewPage() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <Stat label="US queue" value={usEntry} hint="open roles" />
         <Stat label="Canada queue" value={caEntry} hint="open roles" />
-        <Stat label="Companies covered" value={companiesCovered} hint={`${API_COMPANIES.length} API · ${BROWSER_COMPANIES.length} browser`} />
+        <Stat label="Companies covered" value={companiesCovered} hint={`${API_COMPANIES.length} catalog · ${verifiedExpansion} learned · ${BROWSER_COMPANIES.length} browser`} />
         <Stat label="Last discovery" value={timeAgo(lastJob?.lastSeenAt ?? null)} hint="most recent scrape" />
         <Stat label="Workday jobs" value={workdayJobs} hint="in Jobs — assisted fill available" />
+        <Stat label="First-party inventory" value={`${directCoverage}%`} hint={`${directJobs} direct · ${secondaryJobs} community-only`} />
+      </div>
+
+      <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
+        <div className="font-semibold">Automatic ATS expansion</div>
+        <div className="mt-1">
+          {verifiedExpansion} community-discovered boards are verified and monitored directly.
+          {pendingExpansion > 0
+            ? ` ${pendingExpansion} candidate${pendingExpansion === 1 ? " is" : "s are"} waiting for a gentle validation retry.`
+            : " No candidates are waiting for validation."}
+        </div>
       </div>
 
       {categoryRows.length > 0 && (

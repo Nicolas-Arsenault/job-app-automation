@@ -33,6 +33,7 @@ import {
   type DiscoverySourceOutcomeCounts,
   type DiscoverySourceOutcome,
 } from "./lifecycle";
+import { discoveredAtsBoardCount } from "./ats-expansion";
 import {
   notifyDiscordForDiscovery,
   type DiscordNotificationResult,
@@ -286,12 +287,13 @@ function browserResult(
 
 async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> {
   const config = await getDiscoveryConfig();
+  const expandedSourceCount = await discoveredAtsBoardCount();
   const disabled = new Set(config.disabledSources.map((source) => source.toLowerCase()));
   const apiSourceCount = DISCOVERY_SOURCES.filter(
     (source) =>
       !disabled.has(source.name.toLowerCase()) &&
       (source.system !== "watchlist" || config.watchedCompanies.length > 0),
-  ).length;
+  ).length + expandedSourceCount;
   const supportedBrowserCompanies = BROWSER_COMPANIES.filter(
     (company) =>
       SCRAPABLE_BROWSER_SYSTEMS.includes(company.system) &&

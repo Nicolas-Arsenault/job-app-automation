@@ -63,6 +63,7 @@ const MIDTECH = new Set(
     "Jobber", "Geotab Internships", "Visier", "Astera Labs Early Career",
     "Trulioo Co-op & Internships", "Rivian and Volkswagen Group Technologies",
     "nCino Early Talent", "Superhuman",
+    "RBC", "TD", "BMO", "CIBC", "Manulife", "CPP Investments", "EQ Bank",
   ].map(norm),
 );
 

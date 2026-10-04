@@ -11,6 +11,7 @@ import { saveDiscoveryConfig } from "../lib/discovery/config";
 // reproducible.
 
 async function wipe() {
+  await prisma.discoveredAtsBoard.deleteMany();
   await prisma.discoveryJobSighting.deleteMany();
   await prisma.discoverySourceRun.deleteMany();
   await prisma.discoverySource.deleteMany();

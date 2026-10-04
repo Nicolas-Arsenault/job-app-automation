@@ -22,6 +22,52 @@ function posting(over: Partial<DiscoveryPosting>): DiscoveryPosting {
 beforeEach(resetDb);
 
 describe("conservative cross-source dedup (discovery persist)", () => {
+  it("keeps employer and community timestamps separate", async () => {
+    const communityDate = new Date("2026-10-03T12:00:00Z");
+    await ingestPostings(
+      [posting({
+        system: "githubboard",
+        externalId: "board-1",
+        applyUrl: "https://boards.greenhouse.io/acme/jobs/1",
+        postedAt: communityDate,
+      })],
+      true,
+    );
+    const secondary = await prisma.job.findFirstOrThrow();
+    expect(secondary).toMatchObject({
+      employerPostedAt: null,
+      sourceReportedAt: communityDate,
+      firstPartyFirstSeenAt: null,
+      newnessStatus: "secondary_new",
+    });
+
+    const employerDate = new Date("2026-10-02T12:00:00Z");
+    await ingestPostings(
+      [posting({ externalId: "1", postedAt: employerDate })],
+      true,
+    );
+    const promoted = await prisma.job.findFirstOrThrow();
+    expect(promoted.employerPostedAt).toEqual(employerDate);
+    expect(promoted.sourceReportedAt).toEqual(communityDate);
+    expect(promoted.firstPartyFirstSeenAt).not.toBeNull();
+    expect(promoted.newnessStatus).toBe("first_party_new");
+  });
+
+  it("does not make a stable requisition newer when a relative timestamp moves", async () => {
+    const firstDate = new Date("2026-10-01T12:00:00Z");
+    await ingestPostings([posting({ postedAt: firstDate })], true);
+    const firstPartySeen = (await prisma.job.findFirstOrThrow()).firstPartyFirstSeenAt;
+
+    await ingestPostings(
+      [posting({ postedAt: new Date("2026-10-04T12:00:00Z") })],
+      true,
+    );
+    const job = await prisma.job.findFirstOrThrow();
+    expect(job.postedAt).toEqual(firstDate);
+    expect(job.employerPostedAt).toEqual(firstDate);
+    expect(job.firstPartyFirstSeenAt).toEqual(firstPartySeen);
+  });
+
   it("keeps both rows when similar titles point at different URLs", async () => {
     await ingestPostings([posting({})], true);
     expect(await prisma.job.count()).toBe(1);

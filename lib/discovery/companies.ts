@@ -296,6 +296,18 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Clio", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "clio.wd3.myworkdayjobs.com", tenant: "clio", site: "ClioCareerSite", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
   { name: "BlackBerry", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "bb.wd3.myworkdayjobs.com", tenant: "bb", site: "BlackBerry", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true } },
 
+  // ---- Canadian financial institutions and pension funds. These employers
+  // publish student roles on dedicated first-party Workday campus sites. Keep
+  // detail concurrency low: one list request per search and at most two detail
+  // requests at a time is enough on the two-hour schedule.
+  { name: "RBC", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "rbc.wd3.myworkdayjobs.com", tenant: "rbc", site: "RBCEARLYTALENT1", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "TD", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "td.wd3.myworkdayjobs.com", tenant: "td", site: "td_bank_careers", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "BMO", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "bmo.wd3.myworkdayjobs.com", tenant: "bmo", site: "Campus", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "CIBC", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "cibc.wd3.myworkdayjobs.com", tenant: "cibc", site: "campus", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "Manulife", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "manulife.wd3.myworkdayjobs.com", tenant: "manulife", site: "MFCJH_Jobs", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "CPP Investments", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "cppib.wd10.myworkdayjobs.com", tenant: "cppib", site: "cppinvestments", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "EQ Bank", method: "api", system: "lever", token: "eqbank", countryFilter: "post", queryTerms: SWE_BROAD },
+
   // ---- Canada-first technology companies. The Quebec cohort covers Montreal,
   // Quebec City, Sherbrooke, and other provincial offices exposed by each board.
   { name: "Behaviour Interactive", method: "api", system: "lever", token: "bhvr", countryFilter: "post", queryTerms: SWE_BROAD },
