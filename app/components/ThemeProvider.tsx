@@ -47,15 +47,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export function ThemeToggle() {
+export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const { theme, toggle } = useTheme();
   return (
     <button
       onClick={toggle}
       aria-label="Toggle dark mode"
-      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+      className={
+        "flex items-center justify-center gap-2 rounded-xl text-sm font-semibold text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white " +
+        (compact ? "h-10 w-10" : "w-full px-3 py-2.5")
+      }
     >
-      {theme === "dark" ? "☀︎ Light mode" : "☾ Dark mode"}
+      <span aria-hidden="true" className="text-lg leading-none">
+        {theme === "dark" ? "☀︎" : "☾"}
+      </span>
+      {!compact && (theme === "dark" ? "Light mode" : "Dark mode")}
     </button>
   );
 }

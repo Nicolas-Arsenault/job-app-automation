@@ -6,14 +6,22 @@
 :root {
   --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --bg: #f6f7f9;
-  --fg: #111827;
+  --bg: #f7f9f8;
+  --fg: #14201c;
+  --brand: #12b981;
+  --brand-soft: #dff8ed;
 }
 
 html.dark {
-  --bg: #0b0e14;
-  --fg: #e5e7eb;
+  --bg: #08110e;
+  --fg: #e7f0ec;
+  --brand: #34d399;
+  --brand-soft: #11362b;
   color-scheme: dark;
+}
+
+html {
+  scroll-padding-top: 24px;
 }
 
 html,
@@ -21,6 +29,96 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+}
+
+body {
+  min-width: 320px;
+}
+
+::selection {
+  background: #a7f3d0;
+  color: #052e24;
+}
+
+.app-shell {
+  background:
+    radial-gradient(circle at 78% 2%, rgb(209 250 229 / 30%), transparent 28rem),
+    var(--bg);
+}
+
+.app-sidebar {
+  box-shadow: 10px 0 36px rgb(15 23 42 / 3%);
+}
+
+.brand-mark {
+  align-items: center;
+  background: linear-gradient(145deg, #65efbd, #1dcc91);
+  border: 1px solid rgb(5 150 105 / 18%);
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgb(16 185 129 / 24%);
+  color: #064e3b;
+  display: flex;
+  height: 42px;
+  justify-content: center;
+  transform: rotate(-3deg);
+  width: 42px;
+}
+
+.brand-mark svg {
+  height: 29px;
+  width: 29px;
+}
+
+.brand-mark-small {
+  border-radius: 11px;
+  height: 34px;
+  width: 34px;
+}
+
+.brand-mark-small svg {
+  height: 24px;
+  width: 24px;
+}
+
+.page-glow {
+  border-radius: 999px;
+  filter: blur(1px);
+  opacity: 0.45;
+  pointer-events: none;
+  position: absolute;
+}
+
+.page-glow-one {
+  background: rgb(167 243 208 / 30%);
+  height: 260px;
+  right: -100px;
+  top: -110px;
+  width: 260px;
+}
+
+.page-glow-two {
+  background: rgb(224 231 255 / 35%);
+  height: 180px;
+  left: 18%;
+  top: 18rem;
+  width: 180px;
+}
+
+.dark .page-glow {
+  opacity: 0.1;
+}
+
+button,
+a,
+input,
+select,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid rgb(52 211 153 / 45%);
+  outline-offset: 2px;
 }
 
 a {

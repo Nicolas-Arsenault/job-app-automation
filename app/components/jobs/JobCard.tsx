@@ -26,13 +26,13 @@ const employmentLabels: Record<string, string> = {
 };
 
 const secondaryAction =
-  "rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700";
+  "rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-emerald-800 dark:hover:bg-emerald-950";
 
 const dangerAction =
-  "rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:bg-gray-800 dark:text-red-300 dark:hover:bg-red-950";
+  "rounded-xl border border-transparent bg-transparent px-2.5 py-1.5 text-xs font-semibold text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-rose-950 dark:hover:text-rose-300";
 
 const primaryAction =
-  "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400 dark:focus:ring-indigo-400 dark:focus:ring-offset-gray-900";
+  "inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-emerald-400 to-lime-300 px-4 py-2 text-xs font-extrabold text-emerald-950 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 dark:focus:ring-offset-slate-900";
 
 const neutralPill =
   "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300";
@@ -73,25 +73,25 @@ const FIT_TONES: Record<FitBand | "unscored" | "golden", FitTone> = {
   golden: {
     label: "Golden fit",
     card:
-      "border-blue-400 bg-blue-50/80 shadow-blue-200/80 dark:border-blue-500 dark:bg-blue-950/35 dark:shadow-none",
+      "border-violet-200 bg-white shadow-violet-100/50 dark:border-violet-800 dark:bg-slate-900 dark:shadow-none",
     score:
-      "border-blue-400 bg-blue-100 text-blue-950 dark:border-blue-500 dark:bg-blue-900/75 dark:text-blue-50",
+      "border-violet-700 bg-violet-950 text-white dark:border-violet-700 dark:bg-violet-950 dark:text-white",
     badge:
       "bg-blue-200 text-blue-950 dark:bg-blue-800 dark:text-blue-50",
   },
   strong: {
     label: "Strong fit",
     card:
-      "border-emerald-300 bg-emerald-50/60 shadow-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/25 dark:shadow-none",
+      "border-emerald-300 bg-white shadow-emerald-100/60 dark:border-emerald-900 dark:bg-slate-900 dark:shadow-none",
     score:
-      "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/70 dark:text-emerald-100",
+      "border-emerald-800 bg-emerald-950 text-white dark:border-emerald-800 dark:bg-emerald-950 dark:text-white",
     badge:
       "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100",
   },
   possible: {
     label: "Possible fit",
     card:
-      "border-amber-300 bg-amber-50/50 shadow-amber-100/70 dark:border-amber-800 dark:bg-amber-950/20 dark:shadow-none",
+      "border-amber-300 bg-white shadow-amber-100/50 dark:border-amber-900 dark:bg-slate-900 dark:shadow-none",
     score:
       "border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-700 dark:bg-amber-900/70 dark:text-amber-100",
     badge: "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100",
@@ -99,14 +99,14 @@ const FIT_TONES: Record<FitBand | "unscored" | "golden", FitTone> = {
   weak: {
     label: "Weak fit",
     card:
-      "border-rose-200 bg-rose-50/35 dark:border-rose-900 dark:bg-rose-950/15",
+      "border-rose-200 bg-white dark:border-rose-900 dark:bg-slate-900",
     score:
       "border-rose-200 bg-rose-100 text-rose-950 dark:border-rose-800 dark:bg-rose-950/70 dark:text-rose-100",
     badge: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-100",
   },
   unscored: {
     label: "Not scored",
-    card: "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
+    card: "border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900",
     score:
       "border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200",
     badge: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
@@ -171,16 +171,16 @@ function JudgeScore({
         score == null ? "Résumé fit not available" : `Résumé fit ${score} out of 100`
       }
       data-testid="judge-score"
-      className={`flex w-[72px] shrink-0 flex-col items-center rounded-lg border px-1.5 py-2 text-center ${tone.score}`}
+      className={`flex min-h-[96px] w-[92px] shrink-0 flex-col items-center justify-center rounded-2xl border px-2 py-2.5 text-center shadow-sm ${tone.score}`}
     >
-      <span className="text-[9px] font-bold uppercase tracking-[0.16em] opacity-70">
+      <span className="text-[9px] font-bold uppercase tracking-[0.18em] opacity-60">
         Résumé fit
       </span>
-      <span className="mt-0.5 leading-none">
-        <span className="text-2xl font-black tabular-nums">{score ?? "--"}</span>
-        {score != null && <span className="text-[10px] font-semibold opacity-65">/100</span>}
+      <span className="mt-1 leading-none">
+        <span className="text-3xl font-black tracking-[-0.05em] tabular-nums">{score ?? "--"}</span>
+        {score != null && <span className="text-[10px] font-semibold opacity-55">%</span>}
       </span>
-      <span className="mt-1 text-[10px] font-bold leading-3">{tone.label}</span>
+      <span className="mt-1.5 text-[10px] font-extrabold leading-3">{tone.label}</span>
       <span className="mt-0.5 text-[9px] font-medium uppercase tracking-wide opacity-60">
         {providerLabel}
       </span>
@@ -368,19 +368,13 @@ export function JobCard({
   return (
     <article
       data-score-style={hasGoldenScore ? "blue" : "standard"}
-      className={`${styles.jobCard} rounded-lg border px-3 py-2.5 shadow-sm transition-colors ${cardTone(status, isNew, tone)} ${
-        selected ? "ring-2 ring-indigo-500 dark:ring-indigo-400" : ""
+      className={`${styles.jobCard} rounded-[22px] border p-4 shadow-[0_10px_30px_rgba(15,23,42,0.045)] transition-all hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(15,23,42,0.08)] ${cardTone(status, isNew, tone)} ${
+        selected ? "ring-2 ring-emerald-400 dark:ring-emerald-500" : ""
       } ${(isOld || isClosed) && status !== "dismissed" ? "opacity-80" : ""} ${
         hasGoldenScore ? styles.goldenCard : ""
       }`}
     >
-      <div className="flex flex-wrap gap-2.5">
-        <JudgeScore
-          score={job.fitBaseScore}
-          priorityScore={job.fitScore}
-          provider={job.fitProvider}
-          tone={tone}
-        />
+      <div className="flex flex-wrap items-start gap-3">
         {onToggleSelect && (
           <input
             type="checkbox"
@@ -391,8 +385,8 @@ export function JobCard({
             className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
           />
         )}
-        <div className="hidden sm:block">
-          <CompanyLogo company={job.company} size={40} />
+        <div className="hidden rounded-2xl border border-slate-100 bg-slate-50 p-1.5 sm:block dark:border-slate-700 dark:bg-slate-800">
+          <CompanyLogo company={job.company} size={44} />
         </div>
         <div className="min-w-[220px] flex-1">
           <div className="flex items-start justify-between gap-2">
@@ -405,7 +399,7 @@ export function JobCard({
                   rel="noreferrer"
                   onClick={handleOpen}
                   data-testid="job-title"
-                  className="text-sm font-semibold leading-5 text-gray-950 hover:text-indigo-600 hover:underline dark:text-gray-100 dark:hover:text-indigo-300"
+                  className="text-base font-extrabold leading-6 tracking-[-0.015em] text-slate-950 hover:text-emerald-700 hover:underline dark:text-slate-100 dark:hover:text-emerald-300"
                 >
                   {job.title}
                 </a>
@@ -512,7 +506,14 @@ export function JobCard({
 
         </div>
 
-        <div className="flex w-full shrink-0 flex-row flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:flex-col sm:items-end">
+        <JudgeScore
+          score={job.fitBaseScore}
+          priorityScore={job.fitScore}
+          provider={job.fitProvider}
+          tone={tone}
+        />
+
+        <div className="flex w-full shrink-0 flex-row flex-wrap items-center justify-end gap-1.5 lg:w-auto lg:flex-col lg:items-end">
           <a
             href={job.applyUrl}
             target="_blank"
