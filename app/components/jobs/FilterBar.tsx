@@ -15,7 +15,8 @@ const SINCE_OPTIONS: { value: SinceKey; label: string }[] = [
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "posted", label: "Newest" },
   { value: "company", label: "Company" },
-  { value: "fit", label: "Best fit" },
+  { value: "fit", label: "Best résumé fit" },
+  { value: "priority", label: "Priority rank" },
   { value: "salary", label: "Salary" },
 ];
 
@@ -276,7 +277,7 @@ export function FilterBar({
         </label>
 
         <label className="w-32 space-y-1">
-          <FilterLabel>Min fit</FilterLabel>
+          <FilterLabel>Min résumé fit</FilterLabel>
           <select
             className={cls.input + " h-9 dark:focus:border-indigo-400"}
             value={filters.fitMin ?? ""}

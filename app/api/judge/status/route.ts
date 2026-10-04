@@ -40,15 +40,15 @@ export async function GET() {
     const [eligible, scored, strong, possible, providerGroups, avgAgg, lastAgg, companyTiers, locationTiers, criteria, profile, providerStatus] =
       await Promise.all([
         prisma.job.count({ where: base }),
-        prisma.job.count({ where: { ...base, fitScore: { not: null } } }),
-        prisma.job.count({ where: { ...base, fitScore: { gte: STRONG_MIN } } }),
-        prisma.job.count({ where: { ...base, fitScore: { gte: POSSIBLE_MIN, lt: STRONG_MIN } } }),
+        prisma.job.count({ where: { ...base, fitBaseScore: { not: null } } }),
+        prisma.job.count({ where: { ...base, fitBaseScore: { gte: STRONG_MIN } } }),
+        prisma.job.count({ where: { ...base, fitBaseScore: { gte: POSSIBLE_MIN, lt: STRONG_MIN } } }),
         prisma.job.groupBy({
           by: ["fitProvider"],
-          where: { ...base, fitScore: { not: null } },
+          where: { ...base, fitBaseScore: { not: null } },
           _count: { _all: true },
         }),
-        prisma.job.aggregate({ where: { ...base, fitScore: { not: null } }, _avg: { fitScore: true } }),
+        prisma.job.aggregate({ where: { ...base, fitBaseScore: { not: null } }, _avg: { fitBaseScore: true } }),
         prisma.job.aggregate({ where: base, _max: { fitScoredAt: true } }),
         prisma.companyTier.count(),
         prisma.locationTier.count(),
@@ -77,7 +77,10 @@ export async function GET() {
       unscored,
       providerCounts,
       providerStatus,
-      avgScore: avgAgg._avg.fitScore != null ? Math.round(avgAgg._avg.fitScore) : null,
+      avgScore:
+        avgAgg._avg.fitBaseScore != null
+          ? Math.round(avgAgg._avg.fitBaseScore)
+          : null,
       lastScoredAt: lastAgg._max.fitScoredAt ? lastAgg._max.fitScoredAt.toISOString() : null,
       distribution: { strong, possible, weak, unscored },
       companyTiers,

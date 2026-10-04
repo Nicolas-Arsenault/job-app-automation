@@ -190,7 +190,7 @@ export async function notifyDiscordForDiscovery(
       postedAt: true,
       firstSeenAt: true,
       discoverySystem: true,
-      fitScore: true,
+      fitBaseScore: true,
     },
   });
   if (!jobs.length) return { configured: true, candidates: 0, sent: 0, failedBatches: 0 };
@@ -202,7 +202,16 @@ export async function notifyDiscordForDiscovery(
   for (let index = 0; index < jobs.length; index += 10) {
     const batch = jobs.slice(index, index + 10);
     try {
-      const response = await postDiscord(webhookUrl, discordPayload(batch), fetchImpl);
+      const response = await postDiscord(
+        webhookUrl,
+        discordPayload(
+          batch.map(({ fitBaseScore, ...job }) => ({
+            ...job,
+            fitScore: fitBaseScore,
+          })),
+        ),
+        fetchImpl,
+      );
       if (!response.ok) throw new Error(`Discord webhook returned HTTP ${response.status}`);
       sent += batch.length;
     } catch (error) {

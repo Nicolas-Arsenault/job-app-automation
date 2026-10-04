@@ -45,7 +45,7 @@ const BIGTECH = new Set(
     "Robinhood", "Dropbox", "Pinterest", "Cloudflare", "Lyft", "Airbnb",
     "Roblox", "HubSpot", "Datadog", "Waymo", "Apple", "Tesla", "Google",
     "Shopify", "Meta", "LinkedIn", "Rivian", "Cisco",
-    "Ubisoft", "Bosch", "Visa", "Reddit", "Block",
+    "Ubisoft", "Bosch", "Visa", "Reddit", "Block", "DoorDash Canada",
   ].map(norm),
 );
 
@@ -60,7 +60,9 @@ const MIDTECH = new Set(
     "StackAdapt", "TouchBistro", "Thinkific", "Verkada", "SoFi", "Chime",
     "Roku", "Grafana Labs", "CircleCI", "Cockroach Labs", "PagerDuty",
     "New Relic", "Webflow", "Box", "Klaviyo", "D2L", "Wattpad", "Waabi",
-    "Jobber",
+    "Jobber", "Geotab Internships", "Visier", "Astera Labs Early Career",
+    "Trulioo Co-op & Internships", "Rivian and Volkswagen Group Technologies",
+    "nCino Early Talent", "Superhuman",
   ].map(norm),
 );
 
@@ -71,7 +73,7 @@ const AI = new Set(
     "Scale AI", "OpenAI", "Cohere", "ElevenLabs", "Baseten", "Cursor",
     "Cursor (Anysphere)", "Cognition",
     "Lovable", "Granola", "Mercor", "Sierra", "Harvey", "DeepMind", "Mistral",
-    "Ada",
+    "Ada", "Tenstorrent University", "CTGT",
     // Well-known AI labs / applied-AI companies (many surface via YC + boards).
     "Perplexity", "Perplexity AI", "Hugging Face", "Runway", "Runway ML",
     "Character AI", "Character.AI", "Glean", "Writer", "Adept", "Inflection",
@@ -123,6 +125,7 @@ const STARTUP = new Set(
     "Ramp", "Wealthsimple", "Vercel", "Replit", "Zipline",
     "Behaviour Interactive", "TrackTik", "AlayaCare", "League", "Hootsuite",
     "Clearco", "1Password", "Hopper", "Genetec", "Nuvei", "Vention",
+    "Dandy", "Circleback", "Perchwell", "Grow Therapy",
   ].map(norm),
 );
 

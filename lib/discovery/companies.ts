@@ -225,6 +225,25 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Waabi", method: "api", system: "lever", token: "waabi", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Jobber", method: "api", system: "ashby", token: "jobber", countryFilter: "post", queryTerms: SWE_BROAD },
 
+  // ---- Dedicated university / early-career boards. Several employers keep
+  // student requisitions on a separate ATS board, so polling only the main
+  // company board silently misses the exact internships this app targets.
+  // These first-party public feeds were verified live in October 2026.
+  { name: "DoorDash Canada", method: "api", system: "greenhouse", token: "doordashcanada", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Geotab Internships", method: "api", system: "greenhouse", token: "internshiplist2000", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Tenstorrent University", method: "api", system: "greenhouse", token: "tenstorrentuniversity", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Visier", method: "api", system: "greenhouse", token: "visiersolutionsinc", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Astera Labs Early Career", method: "api", system: "greenhouse", token: "asteraearlycareer2027", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Trulioo Co-op & Internships", method: "api", system: "ashby", token: "trulioo-coopandinterns", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Rivian and Volkswagen Group Technologies", method: "api", system: "ashby", token: "rivianvw.tech", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "nCino Early Talent", method: "api", system: "greenhouse", token: "ncinoearlytalent", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Dandy", method: "api", system: "ashby", token: "Dandy", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "CTGT", method: "api", system: "ashby", token: "ctgt", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Circleback", method: "api", system: "ashby", token: "circleback", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Superhuman", method: "api", system: "ashby", token: "Superhuman Platform Inc", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Perchwell", method: "api", system: "ashby", token: "perchwell", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Grow Therapy", method: "api", system: "ashby", token: "grow-therapy", countryFilter: "post", queryTerms: SWE_BROAD },
+
   // ---- Bespoke public JSON endpoints
   { name: "Amazon", method: "api", system: "amazon", countryFilter: "native", queryTerms: SWE },
   { name: "Microsoft", method: "api", system: "microsoft", countryFilter: "native", queryTerms: ["intern"] },
