@@ -117,7 +117,7 @@ function activeFilterCount(filters: FilterState): number {
 }
 
 function FilterLabel({ children }: { children: React.ReactNode }) {
-  return <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{children}</span>;
+  return <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">{children}</span>;
 }
 
 function ChipGroup({
@@ -146,7 +146,7 @@ function ChipGroup({
   const hiddenItems = unselectedItems.slice(Math.max(0, maxVisible - selectedItems.length));
 
   return (
-    <div className="space-y-1.5" data-testid={`facet-${filterKey}`}>
+    <div className="space-y-2" data-testid={`facet-${filterKey}`}>
       <div className="flex items-baseline gap-2">
         <FilterLabel>{label}</FilterLabel>
         {hint && <span className="text-[11px] text-gray-400 dark:text-gray-500">{hint}</span>}
@@ -161,18 +161,18 @@ function ChipGroup({
               aria-pressed={isSelected}
               onClick={() => onToggleValue(filterKey, item.value)}
               className={
-                "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-indigo-400 dark:focus:ring-offset-gray-900 " +
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900 " +
                 (isSelected
-                  ? "border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700 dark:border-indigo-500 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
-                  : "border-gray-200 bg-gray-50 text-gray-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:text-indigo-200")
+                  ? "border-emerald-500 bg-emerald-500 text-emerald-950 shadow-sm hover:bg-emerald-400 dark:border-emerald-400 dark:bg-emerald-400 dark:text-emerald-950"
+                  : "border-slate-200 bg-white text-slate-600 hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950 dark:hover:text-emerald-200")
               }
             >
               {formatFacetLabel(filterKey, item.value)}
               <span
                 className={
                   isSelected
-                    ? "text-indigo-100 dark:text-indigo-100"
-                    : "text-gray-400 dark:text-gray-500"
+                    ? "text-emerald-900/60"
+                    : "text-slate-400 dark:text-slate-500"
                 }
               >
                 {item.count}
@@ -217,12 +217,20 @@ export function FilterBar({
   const salaryValues = salaryOptions(facets?.maxSalary, filters.salaryMin);
 
   return (
-    <section className="mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex flex-wrap items-end gap-2">
+    <section className="mb-5 overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-900">
+      <div className="border-b border-slate-100 bg-gradient-to-r from-emerald-50/75 via-white to-violet-50/40 p-4 dark:border-slate-800 dark:from-emerald-950/30 dark:via-slate-900 dark:to-violet-950/20">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">Shape your search</h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Start broad, then narrow in on the roles that feel right.</p>
+          </div>
+          {count > 0 && <span className="rounded-full bg-emerald-500 px-2.5 py-1 text-[11px] font-bold text-emerald-950">{count} active</span>}
+        </div>
+        <div className="flex flex-wrap items-end gap-2.5">
         <label className="min-w-60 flex-1 space-y-1">
           <FilterLabel>Search title or company</FilterLabel>
           <input
-            className={cls.input + " h-9 dark:focus:border-indigo-400"}
+            className={cls.input + " h-11 pl-4 dark:focus:border-emerald-400"}
             value={searchDraft}
             onChange={(event) => onSearchDraftChange(event.target.value)}
             placeholder="Search title or company…"
@@ -232,7 +240,7 @@ export function FilterBar({
         <label className="w-40 space-y-1">
           <FilterLabel>Date posted</FilterLabel>
           <select
-            className={cls.input + " h-9 dark:focus:border-indigo-400"}
+            className={cls.input + " h-11 dark:focus:border-emerald-400"}
             value={filters.since}
             onChange={(event) => onFiltersChange({ since: event.target.value as SinceKey })}
           >
@@ -247,7 +255,7 @@ export function FilterBar({
         <label className="w-36 space-y-1">
           <FilterLabel>Sort</FilterLabel>
           <select
-            className={cls.input + " h-9 dark:focus:border-indigo-400"}
+            className={cls.input + " h-11 dark:focus:border-emerald-400"}
             value={filters.sort}
             onChange={(event) => onFiltersChange({ sort: event.target.value as SortKey })}
           >
@@ -262,7 +270,7 @@ export function FilterBar({
         <label className="w-36 space-y-1">
           <FilterLabel>Min salary</FilterLabel>
           <select
-            className={cls.input + " h-9 dark:focus:border-indigo-400"}
+            className={cls.input + " h-11 dark:focus:border-emerald-400"}
             value={filters.salaryMin ?? ""}
             onChange={(event) => onFiltersChange({ salaryMin: event.target.value ? Number(event.target.value) : null })}
           >
@@ -278,7 +286,7 @@ export function FilterBar({
         <label className="w-32 space-y-1">
           <FilterLabel>Min fit</FilterLabel>
           <select
-            className={cls.input + " h-9 dark:focus:border-indigo-400"}
+            className={cls.input + " h-11 dark:focus:border-emerald-400"}
             value={filters.fitMin ?? ""}
             onChange={(event) => onFiltersChange({ fitMin: event.target.value ? Number(event.target.value) : null })}
           >
@@ -296,10 +304,10 @@ export function FilterBar({
           aria-pressed={filters.remote}
           onClick={() => onFiltersChange({ remote: !filters.remote })}
           className={
-            "h-9 rounded-lg border px-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-indigo-400 dark:focus:ring-offset-gray-900 " +
+            "h-11 rounded-xl border px-3.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900 " +
             (filters.remote
-              ? "border-indigo-500 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900"
-              : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700")
+              ? "border-emerald-400 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-200"
+              : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300")
           }
         >
           Remote only
@@ -313,7 +321,7 @@ export function FilterBar({
             onFiltersChange({ goldenOnly: !filters.goldenOnly })
           }
           className={
-            "h-9 rounded-lg border px-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:focus:ring-blue-400 dark:focus:ring-offset-gray-900 " +
+            "h-11 rounded-xl border px-3.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900 " +
             (filters.goldenOnly
               ? "border-blue-500 bg-blue-100 text-blue-900 hover:bg-blue-200 dark:border-blue-600 dark:bg-blue-950 dark:text-blue-100 dark:hover:bg-blue-900"
               : "border-blue-300 bg-white text-blue-800 hover:bg-blue-50 dark:border-blue-800 dark:bg-gray-800 dark:text-blue-200 dark:hover:bg-blue-950")
@@ -329,7 +337,7 @@ export function FilterBar({
             onClick={() => onFiltersChange({ warmIntro: !filters.warmIntro })}
             title="Only jobs where you have a LinkedIn connection"
             className={
-              "h-9 rounded-lg border px-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-1 dark:focus:ring-teal-400 dark:focus:ring-offset-gray-900 " +
+              "h-11 rounded-xl border px-3.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 dark:focus:ring-offset-slate-900 " +
               (filters.warmIntro
                 ? "border-teal-500 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950 dark:text-teal-200 dark:hover:bg-teal-900"
                 : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700")
@@ -343,13 +351,14 @@ export function FilterBar({
           type="button"
           onClick={onClear}
           disabled={count === 0}
-          className={cls.btn + " h-9 disabled:cursor-not-allowed"}
+          className={cls.btn + " h-11 disabled:cursor-not-allowed"}
         >
           Clear filters{count > 0 ? ` (${count})` : ""}
         </button>
+        </div>
       </div>
 
-      <div className="mt-3 grid gap-3">
+      <div className="grid items-start gap-x-5 gap-y-4 p-4 lg:grid-cols-3 xl:grid-cols-4">
         {facetsLoading ? (
           <div className="flex flex-wrap gap-1.5" aria-label="Loading filters">
             {Array.from({ length: 12 }, (_, index) => (
@@ -383,7 +392,7 @@ export function FilterBar({
               maxVisible={18}
               onToggleValue={onToggleValue}
             />
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-4 lg:contents">
               <ChipGroup
                 label="Sponsorship"
                 items={facets?.sponsorship ?? []}
