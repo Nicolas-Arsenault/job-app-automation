@@ -50,6 +50,7 @@ describe("forward discovery coverage experiment", () => {
       directCoveragePercent: 50,
       githubCoveragePercent: 50,
       githubUniquePercent: 25,
+      externalMisses: 0,
       overlap: {
         directFirst: 1,
         githubFirst: 0,
@@ -70,5 +71,16 @@ describe("forward discovery coverage experiment", () => {
       startedAt,
     );
     expect(report.githubOnlyRouting).toEqual({ automaticAts: 0, customAdapter: 1 });
+  });
+
+  it("counts manually reported jobs as external misses", () => {
+    const manual = job("https://careers.example.com/jobs/99", []);
+    manual.discoverySystem = "manual:linkedin";
+    const report = calculateCoverageReport([manual], startedAt);
+    expect(report).toMatchObject({
+      total: 1,
+      untracked: 1,
+      externalMisses: 1,
+    });
   });
 });

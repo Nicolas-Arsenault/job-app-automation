@@ -14,6 +14,7 @@ describe("manual application tracking", () => {
       location: "Toronto, Ontario, Canada",
       applicationStatus: "applied",
       appliedAt: new Date("2026-10-01T12:00:00.000Z"),
+      externalSource: "linkedin",
     });
 
     expect(result.created).toBe(true);
@@ -27,7 +28,8 @@ describe("manual application tracking", () => {
     const stored = await prisma.job.findUniqueOrThrow({
       where: { id: result.application.id },
     });
-    expect(stored.discoverySystem).toBe("manual");
+    expect(stored.discoverySystem).toBe("manual:linkedin");
+    expect(stored.isEntryLevel).toBe(true);
     expect(stored.employmentType).toBe("intern");
   });
 

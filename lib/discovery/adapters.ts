@@ -567,7 +567,10 @@ async function teamtailor(c: ApiCompany): Promise<DiscoveryPosting[]> {
       isNonEmptyString(job?.title) &&
       isHttpUrl(job?.url),
   );
-  return mapPool(jobs, 6, async (job) => {
+  return mapPool(jobs, 2, async (job) => {
+    if (process.env.NODE_ENV !== "test") {
+      await wait(250 + Math.floor(Math.random() * 251));
+    }
     const detailHtml = await fetchText(job.url ?? "");
     return mk("teamtailor", c.name, {
       title: job.title ?? "",
@@ -1040,7 +1043,7 @@ async function workday(
   const rows = new Map<string, WorkdayListRow>();
   const configuredSearches = w.searchTerms ?? c.queryTerms;
   const searches = ctx.internshipsOnly && !w.appliedFacets
-    ? INTERNSHIP_SEARCH_TERMS
+    ? (w.searchTerms ?? INTERNSHIP_SEARCH_TERMS)
     : configuredSearches;
   for (const searchText of searches) {
     for (let offset = 0; offset < 100; offset += 20) {
@@ -1099,6 +1102,9 @@ async function workday(
       };
     };
     try {
+      if (process.env.NODE_ENV !== "test") {
+        await wait(350 + Math.floor(Math.random() * 301));
+      }
       data = (await fetchJson(
         `https://${w.host}/wday/cxs/${w.tenant}/${w.site}${j.externalPath}`,
       )) as typeof data;

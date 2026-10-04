@@ -30,6 +30,8 @@
     "discovery:verify": "tsx scripts/verify-queries.ts",
     "discover": "tsx scripts/discover.ts",
     "discover:browser": "tsx scripts/discover.ts --browser",
+    "discovery:benchmark": "tsx scripts/benchmark-coverage.ts",
+    "ats:bootstrap": "tsx scripts/bootstrap-ats.ts",
     "companies:dedupe": "tsx scripts/dedupe-companies.ts",
     "jobs:dedupe": "tsx scripts/dedupe-jobs.ts"
   },

@@ -81,6 +81,35 @@ describe("normalizeUrl", () => {
   it("returns input unchanged when not a URL", () => {
     expect(normalizeUrl("  garbage ")).toBe("garbage");
   });
+
+  it.each([
+    [
+      "https://apply.workable.com/acme/j/ABC123/apply?utm_source=board",
+      "https://apply.workable.com/acme/j/ABC123",
+    ],
+    [
+      "https://jobs.eu.lever.co/acme/12345678-1234-1234-1234-1234567890ab/apply",
+      "https://jobs.eu.lever.co/acme/12345678-1234-1234-1234-1234567890ab",
+    ],
+    [
+      "https://careers-acme.icims.com/jobs/32343/software-engineer/job?mobile=false",
+      "https://careers-acme.icims.com/jobs/32343/job",
+    ],
+    [
+      "https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Toronto/Intern_R123?utm_source=x",
+      "https://acme.wd5.myworkdayjobs.com/Careers/job/Toronto/Intern_R123",
+    ],
+    [
+      "https://boards.greenhouse.io/embed/job_app?for=acme&gh_jid=12345&utm_source=x",
+      "https://job-boards.greenhouse.io/acme/jobs/12345",
+    ],
+    [
+      "https://apply.careers.microsoft.com/careers?pid=1970393556922922&query=intern&start=0",
+      "https://apply.careers.microsoft.com/careers/job/1970393556922922",
+    ],
+  ])("canonicalizes vendor presentation variants in %s", (input, expected) => {
+    expect(normalizeUrl(input)).toBe(expected);
+  });
 });
 
 describe("extractExternalId", () => {

@@ -12,6 +12,7 @@ interface CoverageSighting {
 export interface CoverageJob {
   country: string | null;
   applyUrl: string;
+  discoverySystem?: string | null;
   discoverySightings: CoverageSighting[];
 }
 
@@ -28,6 +29,7 @@ export interface CoverageBucket {
 
 export interface DiscoveryCoverageReport extends CoverageBucket {
   startedAt: string;
+  externalMisses: number;
   byCountry: Record<string, CoverageBucket>;
   overlap: {
     directFirst: number;
@@ -88,6 +90,7 @@ export function calculateCoverageReport(
   let sameTime = 0;
   let automaticAts = 0;
   let customAdapter = 0;
+  let externalMisses = 0;
 
   for (const job of jobs) {
     const country = job.country ?? "UNKNOWN";
@@ -95,6 +98,7 @@ export function calculateCoverageReport(
     countries.set(country, countryBucket);
     total.total++;
     countryBucket.total++;
+    if (job.discoverySystem?.startsWith("manual:")) externalMisses++;
 
     const githubTimes = job.discoverySightings
       .filter((sighting) => sighting.source.system === "githubboard")
@@ -136,6 +140,7 @@ export function calculateCoverageReport(
   return {
     ...finalize(total),
     startedAt: startedAt.toISOString(),
+    externalMisses,
     byCountry: Object.fromEntries(
       [...countries].map(([country, bucket]) => [country, finalize(bucket)]),
     ),
@@ -164,6 +169,7 @@ export async function getDiscoveryCoverageReport(): Promise<DiscoveryCoverageRep
     select: {
       country: true,
       applyUrl: true,
+      discoverySystem: true,
       discoverySightings: {
         select: {
           firstSeenAt: true,

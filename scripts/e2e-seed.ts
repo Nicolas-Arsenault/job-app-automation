@@ -279,9 +279,15 @@ async function main() {
         sponsorship: f.sponsorship ?? null,
         employmentType: f.employmentType ?? null,
         fitScore: f.fitScore ?? null,
+        // The UI intentionally renders résumé fit from the unbanded base score;
+        // fitScore is the priority/tier score. Keep both populated in fixtures
+        // so browser specs exercise the same two-score contract as production.
+        fitBaseScore: f.fitScore ?? null,
         fitProvider: f.fitProvider ?? null,
         fitSummary: f.fitSummary ?? null,
+        fitBaseSummary: f.fitSummary ?? null,
         fitReasons: f.fitScore != null ? JSON.stringify(f.fitReasons ?? []) : null,
+        fitBaseReasons: f.fitScore != null ? JSON.stringify(f.fitReasons ?? []) : null,
         fitScoredAt: f.fitScore != null ? new Date() : null,
         availabilityStatus: f.availabilityStatus ?? "open",
         applicationStatus: f.applicationStatus ?? "none",

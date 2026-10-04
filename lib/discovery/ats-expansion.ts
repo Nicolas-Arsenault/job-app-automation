@@ -7,11 +7,21 @@ import type { DiscoveryPosting, FetchContext } from "./adapters";
 import { fetchCompanyPostings } from "./adapters";
 import { mapPool, type ResolvedSystem } from "./yc";
 
-export type ExpandableAtsSystem = ResolvedSystem;
+export type ExpandableAtsSystem =
+  | ResolvedSystem
+  | "workable"
+  | "teamtailor"
+  | "workday";
 
 export interface AtsBoardIdentity {
   system: ExpandableAtsSystem;
   token: string;
+}
+
+interface WorkdayBoardIdentity {
+  host: string;
+  tenant: string;
+  site: string;
 }
 
 const TOKEN_BLOCKLIST = new Set([
@@ -69,8 +79,8 @@ export function atsBoardFromUrl(value: string): AtsBoardIdentity | null {
     host.endsWith(".greenhouse.io") && host.startsWith("job-boards.")
   ) {
     system = "greenhouse";
-    rawToken = parts[0];
-  } else if (host === "jobs.lever.co") {
+    rawToken = url.searchParams.get("for") ?? parts[0];
+  } else if (host === "jobs.lever.co" || host === "jobs.eu.lever.co") {
     system = "lever";
     rawToken = parts[0];
   } else if (host === "jobs.ashbyhq.com") {
@@ -82,10 +92,77 @@ export function atsBoardFromUrl(value: string): AtsBoardIdentity | null {
   ) {
     system = "smartrecruiters";
     rawToken = parts[0];
+  } else if (host === "apply.workable.com") {
+    system = "workable";
+    rawToken = parts[0];
+  } else if (/^[a-z0-9-]+\.teamtailor\.com$/i.test(host)) {
+    system = "teamtailor";
+    rawToken = host.split(".")[0];
+  } else {
+    const workday = workdayBoardFromUrl(url);
+    if (workday) {
+      return {
+        system: "workday",
+        token: encodeWorkdayBoard(workday),
+      };
+    }
   }
 
   const token = rawToken ? normalizedToken(rawToken) : null;
   return system && token ? { system, token } : null;
+}
+
+function encodeWorkdayBoard(board: WorkdayBoardIdentity): string {
+  return `${board.host}|${board.tenant}|${board.site}`;
+}
+
+function decodeWorkdayBoard(token: string): WorkdayBoardIdentity | null {
+  const [host, tenant, site, ...rest] = token.split("|");
+  if (
+    rest.length > 0 ||
+    !host ||
+    !tenant ||
+    !site ||
+    !/^[a-z0-9.-]+$/i.test(host) ||
+    !/^[a-z0-9._-]+$/i.test(tenant) ||
+    !/^[a-z0-9._-]+$/i.test(site)
+  ) {
+    return null;
+  }
+  return { host, tenant, site };
+}
+
+function normalizedWorkdaySegment(raw: string): string | null {
+  let value: string;
+  try {
+    value = decodeURIComponent(raw).trim();
+  } catch {
+    return null;
+  }
+  return value.length >= 1 && value.length <= 100 && /^[a-z0-9._-]+$/i.test(value)
+    ? value
+    : null;
+}
+
+function workdayBoardFromUrl(url: URL): WorkdayBoardIdentity | null {
+  const host = url.hostname.toLowerCase();
+  const isWorkdayJobs = /(?:^|\.)myworkdayjobs\.com$/i.test(host);
+  const isWorkdaySite = /(?:^|\.)myworkdaysite\.com$/i.test(host);
+  if (!isWorkdayJobs && !isWorkdaySite) return null;
+
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (isWorkdaySite && parts[0]?.toLowerCase() === "recruiting") {
+    const tenant = normalizedWorkdaySegment(parts[1] ?? "");
+    const site = normalizedWorkdaySegment(parts[2] ?? "");
+    return tenant && site ? { host, tenant, site } : null;
+  }
+
+  const withoutLocale = /^[a-z]{2}-[a-z]{2}$/i.test(parts[0] ?? "")
+    ? parts.slice(1)
+    : parts;
+  const site = normalizedWorkdaySegment(withoutLocale[0] ?? "");
+  const tenant = normalizedWorkdaySegment(host.split(".")[0] ?? "");
+  return tenant && site ? { host, tenant, site } : null;
 }
 
 function aliases(raw: string, incoming: string): string {
@@ -167,11 +244,29 @@ async function observeUnsupportedEmployers(
   return candidates.size;
 }
 
+async function resolveSupportedEmployers(postings: DiscoveryPosting[]): Promise<void> {
+  const keys = [...new Set(
+    postings
+      .filter((posting) => atsBoardFromUrl(posting.applyUrl))
+      .map((posting) => companyCandidateKey(canonicalCompanyName(posting.company))),
+  )];
+  if (!keys.length) return;
+  await prisma.communityEmployerCandidate.updateMany({
+    where: { companyKey: { in: keys }, status: "needs_adapter" },
+    data: {
+      status: "resolved",
+      notes: "Automatically promoted to direct ATS monitoring",
+      lastSeenAt: new Date(),
+    },
+  });
+}
+
 export async function observeCommunityAtsBoards(
   postings: DiscoveryPosting[],
   evidenceSource: string,
 ): Promise<number> {
   await observeUnsupportedEmployers(postings, evidenceSource);
+  await resolveSupportedEmployers(postings);
   const candidates = new Map<string, { posting: DiscoveryPosting; board: AtsBoardIdentity }>();
   for (const posting of postings) {
     const board = atsBoardFromUrl(posting.applyUrl);
@@ -182,7 +277,7 @@ export async function observeCommunityAtsBoards(
   for (const { posting, board } of candidates.values()) {
     const current = await prisma.discoveredAtsBoard.findUnique({
       where: { system_token: { system: board.system, token: board.token } },
-      select: { companyAliases: true, status: true },
+      select: { companyAliases: true },
     });
     await prisma.discoveredAtsBoard.upsert({
       where: { system_token: { system: board.system, token: board.token } },
@@ -202,8 +297,9 @@ export async function observeCommunityAtsBoards(
         evidenceSource,
         evidenceJobId: posting.externalId || null,
         lastSeenAt: new Date(),
-        // A disabled or manually rejected board stays that way.
-        ...(current?.status === "pending" ? { nextRetryAt: null } : {}),
+        // Preserve validation backoff. Merely seeing another posting from the
+        // same board is not evidence that a throttled or unavailable endpoint
+        // should be retried before nextRetryAt.
       },
     });
   }
@@ -245,15 +341,41 @@ function asApiCompany(row: {
   company: string;
   system: string;
   token: string;
-}): ApiCompany {
+}, validationOnly = false): ApiCompany {
+  if (row.system === "workday") {
+    const workday = decodeWorkdayBoard(row.token);
+    if (!workday) throw new Error(`Invalid discovered Workday identity: ${row.token}`);
+    return {
+      name: row.company,
+      method: "api",
+      system: "workday",
+      countryFilter: "post",
+      queryTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
+      workday: {
+        ...workday,
+        searchTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
+        fetchDescriptions: !validationOnly,
+        detailConcurrency: 2,
+      },
+    };
+  }
   return {
     name: row.company,
     method: "api",
-    system: row.system as ExpandableAtsSystem,
+    system: row.system as Exclude<ExpandableAtsSystem, "workday">,
     token: row.token,
     countryFilter: "post",
     queryTerms: ["software engineer", "software developer", "machine learning", "devops"],
   };
+}
+
+export function atsCompanyBoardKey(company: ApiCompany): string | null {
+  if (company.system === "workday" && company.workday) {
+    return `workday:${encodeWorkdayBoard(company.workday).toLowerCase()}`;
+  }
+  return company.token
+    ? `${company.system}:${company.token.toLowerCase()}`
+    : null;
 }
 
 export async function validatePendingAtsBoards(
@@ -272,14 +394,17 @@ export async function validatePendingAtsBoards(
       OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
     },
     orderBy: [{ confidence: "desc" }, { firstSeenAt: "asc" }],
-    take: options.limit ?? 20,
+    // New community boards are intentionally admitted slowly. Eight boards per
+    // two-hour cycle keeps validation useful without creating a burst across
+    // third-party ATS infrastructure.
+    take: options.limit ?? 8,
   });
   const validate = options.validate ?? fetchCompanyPostings;
   let verified = 0;
   let failed = 0;
   await mapPool(rows, options.concurrency ?? 2, async (row) => {
     try {
-      await validate(asApiCompany(row), ctx);
+      await validate(asApiCompany(row, true), ctx);
       await prisma.discoveredAtsBoard.update({
         where: { id: row.id },
         data: {
@@ -315,7 +440,7 @@ export async function verifiedAtsCompanies(): Promise<ApiCompany[]> {
     orderBy: [{ company: "asc" }, { system: "asc" }],
     select: { company: true, system: true, token: true },
   });
-  return rows.map(asApiCompany);
+  return rows.map((row) => asApiCompany(row));
 }
 
 export async function discoveredAtsBoardCount(): Promise<number> {

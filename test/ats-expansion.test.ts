@@ -42,6 +42,39 @@ describe("automatic ATS expansion", () => {
     expect(atsBoardFromUrl("https://jobs.lever.co/jobs/abc")).toBeNull();
   });
 
+  it("extracts conservative Workday and Workable board identities", () => {
+    expect(
+      atsBoardFromUrl(
+        "https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Toronto/Software-Intern_R12345",
+      ),
+    ).toEqual({
+      system: "workday",
+      token: "acme.wd5.myworkdayjobs.com|acme|Careers",
+    });
+    expect(
+      atsBoardFromUrl(
+        "https://wd3.myworkdaysite.com/recruiting/magna/Magna/job/Toronto/Intern_R123",
+      ),
+    ).toEqual({
+      system: "workday",
+      token: "wd3.myworkdaysite.com|magna|Magna",
+    });
+    expect(
+      atsBoardFromUrl("https://apply.workable.com/acme-inc/j/ABC123/apply"),
+    ).toEqual({ system: "workable", token: "acme-inc" });
+    expect(
+      atsBoardFromUrl("https://jobs.eu.lever.co/acme/12345678-1234-1234-1234-1234567890ab"),
+    ).toEqual({ system: "lever", token: "acme" });
+  });
+
+  it("recovers Greenhouse boards from official embed URLs", () => {
+    expect(
+      atsBoardFromUrl(
+        "https://boards.greenhouse.io/embed/job_app?for=acme&gh_jid=12345",
+      ),
+    ).toEqual({ system: "greenhouse", token: "acme" });
+  });
+
   it("records one pending candidate and preserves employer aliases", async () => {
     const url = "https://jobs.lever.co/acme-co/abc";
     await observeCommunityAtsBoards([posting(url)], "Community A");
@@ -60,7 +93,7 @@ describe("automatic ATS expansion", () => {
     );
   });
 
-  it("records unsupported employers as a custom-adapter backlog", async () => {
+  it("records only unsupported employers as a custom-adapter backlog", async () => {
     await observeCommunityAtsBoards(
       [
         posting("https://acme.wd5.myworkdayjobs.com/Acme/job/Toronto/Intern_R123", "Acme"),
@@ -75,13 +108,6 @@ describe("automatic ATS expansion", () => {
     });
     expect(candidates).toMatchObject([
       {
-        company: "Acme",
-        detectedPlatform: "workday",
-        applicationHost: "acme.wd5.myworkdayjobs.com",
-        status: "needs_adapter",
-        observations: 1,
-      },
-      {
         company: "Example Labs",
         detectedPlatform: "unknown",
         applicationHost: "careers.example.com",
@@ -90,6 +116,7 @@ describe("automatic ATS expansion", () => {
       },
     ]);
     expect(candidates.some((candidate) => candidate.company === "Supported Company")).toBe(false);
+    expect(candidates.some((candidate) => candidate.company === "Acme")).toBe(false);
 
     await observeCommunityAtsBoards(
       [posting("https://careers.example.com/jobs/software-intern-43", "Example Labs")],
@@ -97,7 +124,7 @@ describe("automatic ATS expansion", () => {
     );
     expect(
       await prisma.communityEmployerCandidate.findUniqueOrThrow({
-        where: { companyKey: candidates[1].companyKey },
+        where: { companyKey: candidates[0].companyKey },
       }),
     ).toMatchObject({ observations: 2 });
   });
@@ -115,6 +142,40 @@ describe("automatic ATS expansion", () => {
     expect(result).toEqual({ verified: 1, failed: 0 });
     expect(await verifiedAtsCompanies()).toEqual([
       expect.objectContaining({ name: "Acme, Inc.", system: "greenhouse", token: "acmeco" }),
+    ]);
+  });
+
+  it("turns discovered Workday configuration into a pollable source", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Toronto/Intern_R123")],
+      "Community A",
+    );
+    await validatePendingAtsBoards(
+      { internshipsOnly: true, countries: ["US", "CA"] },
+      {
+        concurrency: 1,
+        validate: async (company) => {
+          expect(company).toMatchObject({
+            name: "Acme, Inc.",
+            system: "workday",
+            workday: {
+              host: "acme.wd5.myworkdayjobs.com",
+              tenant: "acme",
+              site: "Careers",
+              detailConcurrency: 2,
+              fetchDescriptions: false,
+              searchTerms: ["intern"],
+            },
+          });
+          return [];
+        },
+      },
+    );
+    expect(await verifiedAtsCompanies()).toEqual([
+      expect.objectContaining({
+        system: "workday",
+        workday: expect.objectContaining({ site: "Careers" }),
+      }),
     ]);
   });
 
@@ -140,6 +201,23 @@ describe("automatic ATS expansion", () => {
       status: "pending",
       failureCount: 1,
       lastError: "HTTP 429",
+    });
+  });
+
+  it("does not erase validation backoff when a board is observed again", async () => {
+    const url = "https://jobs.lever.co/acme-co/abc";
+    await observeCommunityAtsBoards([posting(url)], "Community A");
+    const retryAt = new Date("2026-10-05T12:00:00Z");
+    const row = await prisma.discoveredAtsBoard.findFirstOrThrow();
+    await prisma.discoveredAtsBoard.update({
+      where: { id: row.id },
+      data: { nextRetryAt: retryAt, failureCount: 2 },
+    });
+
+    await observeCommunityAtsBoards([posting(url)], "Community B");
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      nextRetryAt: retryAt,
+      failureCount: 2,
     });
   });
 });

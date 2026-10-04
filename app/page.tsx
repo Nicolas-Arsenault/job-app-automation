@@ -214,6 +214,7 @@ export default async function OverviewPage() {
           <span>Both: <b>{coverage.both}</b></span>
           <span>GitHub only: <b>{coverage.githubOnly}</b></span>
           <span>Untracked: <b>{coverage.untracked}</b></span>
+          <span>External misses: <b>{coverage.externalMisses}</b></span>
           <span>Direct first: <b>{coverage.overlap.directFirst}</b></span>
           <span>GitHub first: <b>{coverage.overlap.githubFirst}</b></span>
           <span>

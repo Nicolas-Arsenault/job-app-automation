@@ -51,6 +51,53 @@ export function normalizeUrl(url: string): string {
       if (isTrackingQueryParam(name)) u.searchParams.delete(name);
     }
     u.searchParams.sort();
+
+    const host = u.hostname.toLowerCase();
+    const parts = u.pathname.split("/").filter(Boolean);
+
+    // Vendor-specific canonical forms remove presentation-only path segments
+    // while retaining the employer/account and requisition identity. These are
+    // strict transformations; no title similarity is used for deduplication.
+    if (host === "apply.workable.com" && parts[1]?.toLowerCase() === "j") {
+      u.pathname = `/${parts[0]}/j/${parts[2]}`;
+      u.search = "";
+    } else if (
+      (host === "jobs.lever.co" || host === "jobs.eu.lever.co") &&
+      parts[2]?.toLowerCase() === "apply"
+    ) {
+      u.pathname = `/${parts[0]}/${parts[1]}`;
+      u.search = "";
+    } else if (host.endsWith(".icims.com")) {
+      const jobsIndex = parts.findIndex((part) => part.toLowerCase() === "jobs");
+      const id = jobsIndex >= 0 ? parts[jobsIndex + 1] : undefined;
+      if (id && /^\d+$/.test(id)) {
+        u.pathname = `/jobs/${id}/job`;
+        u.search = "";
+      }
+    } else if (host === "apply.careers.microsoft.com") {
+      const id = u.searchParams.get("pid") ?? parts.at(-1);
+      if (id && /^\d{8,}$/.test(id)) {
+        u.pathname = `/careers/job/${id}`;
+        u.search = "";
+      }
+    } else if (
+      host.includes("myworkdayjobs.com") &&
+      /^[a-z]{2}-[a-z]{2}$/i.test(parts[0] ?? "")
+    ) {
+      u.pathname = `/${parts.slice(1).join("/")}`;
+    } else if (
+      (host === "boards.greenhouse.io" || host === "job-boards.greenhouse.io") &&
+      parts[0]?.toLowerCase() === "embed"
+    ) {
+      const board = u.searchParams.get("for");
+      const id = u.searchParams.get("gh_jid") ?? u.searchParams.get("token");
+      if (board && id && /^\d+$/.test(id)) {
+        u.hostname = "job-boards.greenhouse.io";
+        u.pathname = `/${board}/jobs/${id}`;
+        u.search = "";
+      }
+    }
+
     let s = u.toString();
     if (s.endsWith("/")) s = s.slice(0, -1);
     return s;
@@ -121,6 +168,14 @@ export function extractExternalId(
     try {
       const match = new URL(applyUrl).pathname.match(/\/jobs\/(\d+)\b/i);
       if (match) return match[1];
+    } catch {
+      // Fall through to a source-provided ID when the URL is malformed.
+    }
+  }
+  if (atsType === "workable") {
+    try {
+      const match = new URL(applyUrl).pathname.match(/^\/([^/]+)\/j\/([^/]+)/i);
+      if (match) return `${match[1]}:${match[2]}`;
     } catch {
       // Fall through to a source-provided ID when the URL is malformed.
     }

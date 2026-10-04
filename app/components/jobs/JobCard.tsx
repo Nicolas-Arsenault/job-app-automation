@@ -341,9 +341,9 @@ export function JobCard({
   ]
     .filter(Boolean)
     .join(" · ");
-  const tone = fitTone(job.fitBaseScore, job.isGolden);
   const hasGoldenScore =
     job.fitScore != null && job.fitScore >= GOLDEN_JOB_SCORE_FLOOR;
+  const tone = fitTone(job.fitBaseScore, job.isGolden || hasGoldenScore);
   const yoeText =
     job.minYoE == null ? null : job.minYoE === 0 ? "No exp. req." : `${job.minYoE}+ yrs`;
   const employmentText = job.employmentType

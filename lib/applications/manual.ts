@@ -14,6 +14,19 @@ export const MANUAL_APPLICATION_STATUSES = [
 export type ManualApplicationStatus =
   (typeof MANUAL_APPLICATION_STATUSES)[number];
 
+export const EXTERNAL_DISCOVERY_SOURCES = [
+  "linkedin",
+  "simplify",
+  "jobright",
+  "indeed",
+  "wellfound",
+  "company-site",
+  "other",
+] as const;
+
+export type ExternalDiscoverySource =
+  (typeof EXTERNAL_DISCOVERY_SOURCES)[number];
+
 export interface ManualApplicationInput {
   title: string;
   company: string;
@@ -22,6 +35,7 @@ export interface ManualApplicationInput {
   country?: "US" | "CA" | "OTHER";
   applicationStatus: ManualApplicationStatus;
   appliedAt: Date;
+  externalSource?: ExternalDiscoverySource;
 }
 
 const trackedApplicationSelect = {
@@ -107,12 +121,15 @@ export async function addManualApplication(input: ManualApplicationInput) {
       applyUrl: canonical.applyUrl,
       isWorkday: canonical.atsType === "workday",
       country,
-      isEntryLevel: false,
-      discoverySystem: "manual",
+      isEntryLevel: true,
+      discoverySystem: `manual:${input.externalSource ?? "other"}`,
       fingerprint,
       employmentType: "intern",
       ...applicationData,
-      raw: JSON.stringify({ manuallyAdded: true }),
+      raw: JSON.stringify({
+        manuallyAdded: true,
+        externalDiscoverySource: input.externalSource ?? "other",
+      }),
     },
     select: trackedApplicationSelect,
   });

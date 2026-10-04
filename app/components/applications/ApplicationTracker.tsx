@@ -66,6 +66,7 @@ export function ApplicationTracker({
     location: "",
     country: "" as "" | "US" | "CA" | "OTHER",
     applicationStatus: "applied" as TrackedApplicationStatus,
+    externalSource: "linkedin",
     appliedDate: todayForInput(),
   });
 
@@ -161,6 +162,7 @@ export function ApplicationTracker({
         location: "",
         country: "",
         applicationStatus: "applied",
+        externalSource: "linkedin",
         appliedDate: todayForInput(),
       });
     } catch (caught) {
@@ -263,6 +265,22 @@ export function ApplicationTracker({
                 {STAGES.map((stage) => (
                   <option key={stage.value} value={stage.value}>{stage.label}</option>
                 ))}
+              </select>
+            </label>
+            <label className="text-sm font-medium">
+              Discovery source
+              <select
+                value={manualApplication.externalSource}
+                onChange={(event) => setManualApplication((current) => ({ ...current, externalSource: event.target.value }))}
+                className={`${cls.input} mt-1 w-full`}
+              >
+                <option value="linkedin">LinkedIn</option>
+                <option value="simplify">Simplify</option>
+                <option value="jobright">Jobright</option>
+                <option value="indeed">Indeed</option>
+                <option value="wellfound">Wellfound</option>
+                <option value="company-site">Employer career page</option>
+                <option value="other">Other</option>
               </select>
             </label>
           </div>

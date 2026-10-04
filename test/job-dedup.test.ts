@@ -84,4 +84,31 @@ describe("dedupeStoredJobsByApplyUrl", () => {
     });
     expect(await prisma.job.count()).toBe(2);
   });
+
+  it("merges safe vendor URL variants without using title similarity", async () => {
+    await prisma.job.createMany({
+      data: [
+        {
+          dedupeKey: "board:one",
+          title: "Software Engineer Intern",
+          company: "Acme",
+          applyUrl: "https://apply.workable.com/acme/j/ABC123/apply",
+        },
+        {
+          dedupeKey: "board:two",
+          title: "Backend Internship",
+          company: "Acme",
+          applyUrl: "https://apply.workable.com/acme/j/ABC123",
+        },
+      ],
+    });
+
+    expect(await dedupeStoredJobsByApplyUrl()).toEqual({
+      groupsMerged: 1,
+      jobsRemoved: 1,
+    });
+    expect(await prisma.job.findFirstOrThrow()).toMatchObject({
+      applyUrl: "https://apply.workable.com/acme/j/ABC123",
+    });
+  });
 });

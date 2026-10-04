@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
   addManualApplication,
+  EXTERNAL_DISCOVERY_SOURCES,
   MANUAL_APPLICATION_STATUSES,
 } from "@/lib/applications/manual";
 import { errorResponse, isSameOriginRequest, json } from "@/lib/http";
@@ -17,6 +18,7 @@ const manualApplicationSchema = z.object({
   location: z.string().trim().max(200).optional().default(""),
   country: z.enum(["US", "CA", "OTHER"]).optional(),
   applicationStatus: z.enum(MANUAL_APPLICATION_STATUSES).default("applied"),
+  externalSource: z.enum(EXTERNAL_DISCOVERY_SOURCES).optional().default("other"),
   appliedDate: z.iso.date(),
 });
 
@@ -45,6 +47,7 @@ export async function POST(request: NextRequest) {
       location: parsed.data.location,
       country: parsed.data.country,
       applicationStatus: parsed.data.applicationStatus,
+      externalSource: parsed.data.externalSource,
       // Noon UTC avoids a date-only value rendering as the previous day in
       // North American time zones.
       appliedAt: new Date(`${parsed.data.appliedDate}T12:00:00.000Z`),

@@ -7,6 +7,7 @@ import { enrich, type Enrichment } from "./enrich";
 import { getDiscoveryConfig, toEntryLevelOptions, type DiscoveryConfigData } from "./config";
 import { DISCOVERY_SOURCES, type ApiCompany } from "./companies";
 import {
+  atsCompanyBoardKey,
   bootstrapCommunityAtsBoards,
   observeCommunityAtsBoards,
   validatePendingAtsBoards,
@@ -617,14 +618,18 @@ export async function runDiscovery(opts?: {
   const disabled = new Set(config.disabledSources.map((s) => s.toLowerCase()));
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
   const staticBoardIds = new Set(
-    DISCOVERY_SOURCES.flatMap((source) =>
-      source.token ? [`${source.system}:${source.token.toLowerCase()}`] : [],
-    ),
+    DISCOVERY_SOURCES.flatMap((source) => {
+      const key = atsCompanyBoardKey(source);
+      return key ? [key] : [];
+    }),
   );
   const allSources = [
     ...DISCOVERY_SOURCES,
     ...expandedCompanies.filter(
-      (source) => !staticBoardIds.has(`${source.system}:${source.token?.toLowerCase()}`),
+      (source) => {
+        const key = atsCompanyBoardKey(source);
+        return !key || !staticBoardIds.has(key);
+      },
     ),
   ];
   const targets = allSources.filter((c) => {
