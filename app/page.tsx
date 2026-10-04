@@ -41,7 +41,7 @@ export default async function OverviewPage() {
     ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
     ...ACTIVE_JOB_WHERE,
   } as const;
-  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues, atsExpansion, secondaryJobs, directJobs] = await Promise.all([
+  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues, atsExpansion, secondaryJobs, directJobs, adapterBacklog, adapterPlatforms] = await Promise.all([
     getDiscoveryScopeCopy(),
     prisma.job.count({ where: { ...entryWhere, country: "US" } }),
     prisma.job.count({ where: { ...entryWhere, country: "CA" } }),
@@ -80,6 +80,27 @@ export default async function OverviewPage() {
     }),
     prisma.job.count({ where: { ...entryWhere, discoverySystem: "githubboard" } }),
     prisma.job.count({ where: { ...entryWhere, discoverySystem: { not: "githubboard" } } }),
+    prisma.communityEmployerCandidate.findMany({
+      where: { status: "needs_adapter" },
+      orderBy: [{ observations: "desc" }, { lastSeenAt: "desc" }],
+      take: 12,
+      select: {
+        companyKey: true,
+        company: true,
+        detectedPlatform: true,
+        applicationHost: true,
+        exampleApplyUrl: true,
+        exampleTitle: true,
+        evidenceSource: true,
+        observations: true,
+      },
+    }),
+    prisma.communityEmployerCandidate.groupBy({
+      by: ["detectedPlatform"],
+      where: { status: "needs_adapter" },
+      _count: { _all: true },
+      orderBy: { _count: { detectedPlatform: "desc" } },
+    }),
   ]);
 
   const verifiedExpansion = atsExpansion.find((row) => row.status === "verified")?._count._all ?? 0;
@@ -162,7 +183,58 @@ export default async function OverviewPage() {
             ? ` ${pendingExpansion} candidate${pendingExpansion === 1 ? " is" : "s are"} waiting for a gentle validation retry.`
             : " No candidates are waiting for validation."}
         </div>
+        <div className="mt-2 text-xs opacity-80">
+          Custom-adapter backlog: {adapterPlatforms.reduce((sum, row) => sum + row._count._all, 0)} employers
+          {adapterPlatforms.length
+            ? ` · ${adapterPlatforms.map((row) => `${row.detectedPlatform} ${row._count._all}`).join(" · ")}`
+            : ""}
+        </div>
       </div>
+
+      {adapterBacklog.length > 0 && (
+        <div className="mt-6">
+          <h2 className="mb-3 text-lg font-semibold">Employers needing custom coverage</h2>
+          <div className={cls.card + " overflow-x-auto p-0"}>
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-200 text-left text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Employer</th>
+                  <th className="px-4 py-2 font-medium">Platform / host</th>
+                  <th className="px-4 py-2 font-medium">Evidence</th>
+                  <th className="px-4 py-2 font-medium">Seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {adapterBacklog.map((candidate) => (
+                  <tr key={candidate.companyKey} className="border-b border-gray-100 last:border-0 dark:border-gray-800">
+                    <td className="px-4 py-2 font-medium">{candidate.company}</td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-gray-300">
+                      {candidate.detectedPlatform}
+                      {candidate.applicationHost ? ` · ${candidate.applicationHost}` : ""}
+                    </td>
+                    <td className="max-w-md px-4 py-2">
+                      <a
+                        href={candidate.exampleApplyUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-indigo-600 hover:underline dark:text-indigo-300"
+                      >
+                        {candidate.exampleTitle ?? "Example posting"}
+                      </a>
+                      {candidate.evidenceSource ? (
+                        <div className="mt-0.5 text-xs text-gray-400">{candidate.evidenceSource}</div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2 tabular-nums text-gray-600 dark:text-gray-300">
+                      {candidate.observations}×
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {categoryRows.length > 0 && (
         <div className="mt-8">

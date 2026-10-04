@@ -60,6 +60,48 @@ describe("automatic ATS expansion", () => {
     );
   });
 
+  it("records unsupported employers as a custom-adapter backlog", async () => {
+    await observeCommunityAtsBoards(
+      [
+        posting("https://acme.wd5.myworkdayjobs.com/Acme/job/Toronto/Intern_R123", "Acme"),
+        posting("https://careers.example.com/jobs/software-intern-42", "Example Labs"),
+        posting("https://jobs.lever.co/supported/abc", "Supported Company"),
+      ],
+      "Community A",
+    );
+
+    const candidates = await prisma.communityEmployerCandidate.findMany({
+      orderBy: { company: "asc" },
+    });
+    expect(candidates).toMatchObject([
+      {
+        company: "Acme",
+        detectedPlatform: "workday",
+        applicationHost: "acme.wd5.myworkdayjobs.com",
+        status: "needs_adapter",
+        observations: 1,
+      },
+      {
+        company: "Example Labs",
+        detectedPlatform: "unknown",
+        applicationHost: "careers.example.com",
+        status: "needs_adapter",
+        observations: 1,
+      },
+    ]);
+    expect(candidates.some((candidate) => candidate.company === "Supported Company")).toBe(false);
+
+    await observeCommunityAtsBoards(
+      [posting("https://careers.example.com/jobs/software-intern-43", "Example Labs")],
+      "Community B",
+    );
+    expect(
+      await prisma.communityEmployerCandidate.findUniqueOrThrow({
+        where: { companyKey: candidates[1].companyKey },
+      }),
+    ).toMatchObject({ observations: 2 });
+  });
+
   it("validates a bounded candidate and makes it a pollable source", async () => {
     await observeCommunityAtsBoards(
       [posting("https://job-boards.greenhouse.io/acmeco/jobs/123")],

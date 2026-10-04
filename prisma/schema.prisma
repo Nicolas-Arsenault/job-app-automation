@@ -325,6 +325,30 @@ model DiscoveredAtsBoard {
   @@index([company])
 }
 
+// Employers observed on community boards whose application URL cannot yet be
+// converted into one of the automatically monitored ATS boards above. This is
+// the durable backlog for custom adapters and new ATS resolvers.
+model CommunityEmployerCandidate {
+  companyKey       String   @id
+  company          String
+  detectedPlatform String   @default("unknown")
+  applicationHost  String?
+  exampleApplyUrl  String
+  exampleTitle     String?
+  evidenceSource   String?
+  status           String   @default("needs_adapter") // needs_adapter | resolved | ignored
+  observations     Int      @default(1)
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status, detectedPlatform])
+  @@index([applicationHost])
+  @@index([lastSeenAt])
+}
+
 // A parsed snapshot of the user's resume; drives "Refresh Profile".
 model ResumeVersion {
   id        String   @id @default(cuid())

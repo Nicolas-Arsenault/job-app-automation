@@ -1,5 +1,7 @@
 import { canonicalCompanyName } from "../company-names";
 import { prisma } from "../db";
+import { createHash } from "node:crypto";
+import { detectAts } from "../sources/normalize";
 import type { ApiCompany } from "./companies";
 import type { DiscoveryPosting, FetchContext } from "./adapters";
 import { fetchCompanyPostings } from "./adapters";
@@ -100,10 +102,76 @@ function aliases(raw: string, incoming: string): string {
   );
 }
 
+function companyCandidateKey(company: string): string {
+  const normalized = canonicalCompanyName(company)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+  return createHash("sha1").update(normalized || company.trim().toLowerCase()).digest("hex");
+}
+
+function applicationHost(value: string): string | null {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+async function observeUnsupportedEmployers(
+  postings: DiscoveryPosting[],
+  evidenceSource: string,
+): Promise<number> {
+  const candidates = new Map<string, DiscoveryPosting>();
+  for (const posting of postings) {
+    if (atsBoardFromUrl(posting.applyUrl)) continue;
+    const company = canonicalCompanyName(posting.company);
+    if (!company) continue;
+    candidates.set(companyCandidateKey(company), posting);
+  }
+  if (!candidates.size) return 0;
+
+  const keys = [...candidates.keys()];
+  const existing = await prisma.communityEmployerCandidate.findMany({
+    where: { companyKey: { in: keys } },
+    select: { companyKey: true },
+  });
+  const existingKeys = new Set(existing.map((row) => row.companyKey));
+  const now = new Date();
+  const newRows = [...candidates].flatMap(([companyKey, posting]) => {
+    if (existingKeys.has(companyKey)) return [];
+    return [{
+      companyKey,
+      company: canonicalCompanyName(posting.company),
+      detectedPlatform: detectAts(posting.applyUrl),
+      applicationHost: applicationHost(posting.applyUrl),
+      exampleApplyUrl: posting.applyUrl,
+      exampleTitle: posting.title || null,
+      evidenceSource,
+      firstSeenAt: now,
+      lastSeenAt: now,
+    }];
+  });
+  if (newRows.length) {
+    await prisma.communityEmployerCandidate.createMany({ data: newRows });
+  }
+  if (existingKeys.size) {
+    await prisma.communityEmployerCandidate.updateMany({
+      where: { companyKey: { in: [...existingKeys] } },
+      data: { lastSeenAt: now, observations: { increment: 1 } },
+    });
+  }
+  return candidates.size;
+}
+
 export async function observeCommunityAtsBoards(
   postings: DiscoveryPosting[],
   evidenceSource: string,
 ): Promise<number> {
+  await observeUnsupportedEmployers(postings, evidenceSource);
   const candidates = new Map<string, { posting: DiscoveryPosting; board: AtsBoardIdentity }>();
   for (const posting of postings) {
     const board = atsBoardFromUrl(posting.applyUrl);
@@ -142,7 +210,7 @@ export async function observeCommunityAtsBoards(
   return candidates.size;
 }
 
-export async function bootstrapCommunityAtsBoards(limit = 500): Promise<number> {
+export async function bootstrapCommunityAtsBoards(limit = 5000): Promise<number> {
   const jobs = await prisma.job.findMany({
     where: { discoverySystem: "githubboard" },
     orderBy: { firstSeenAt: "desc" },
