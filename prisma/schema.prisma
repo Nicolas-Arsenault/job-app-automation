@@ -349,6 +349,15 @@ model CommunityEmployerCandidate {
   @@index([lastSeenAt])
 }
 
+// A forward-looking cohort used to measure direct employer coverage against
+// community GitHub boards without initial-import/order bias.
+model DiscoveryCoverageExperiment {
+  id        String   @id @default("default")
+  startedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // A parsed snapshot of the user's resume; drives "Refresh Profile".
 model ResumeVersion {
   id        String   @id @default(cuid())

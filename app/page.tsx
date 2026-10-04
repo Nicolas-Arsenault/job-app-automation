@@ -12,6 +12,7 @@ import { ScanButton } from "./components/ScanButton";
 import { ACTIVE_JOB_WHERE } from "@/lib/jobs/availability";
 import { getDiscoveryScopeCopy } from "@/lib/discovery/scope";
 import { getDiscoveryConfig } from "@/lib/discovery/config";
+import { getDiscoveryCoverageReport } from "@/lib/discovery/coverage";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export default async function OverviewPage() {
     ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
     ...ACTIVE_JOB_WHERE,
   } as const;
-  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues, atsExpansion, secondaryJobs, directJobs, adapterBacklog, adapterPlatforms] = await Promise.all([
+  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues, atsExpansion, secondaryJobs, directJobs, adapterBacklog, adapterPlatforms, coverage] = await Promise.all([
     getDiscoveryScopeCopy(),
     prisma.job.count({ where: { ...entryWhere, country: "US" } }),
     prisma.job.count({ where: { ...entryWhere, country: "CA" } }),
@@ -101,6 +102,7 @@ export default async function OverviewPage() {
       _count: { _all: true },
       orderBy: { _count: { detectedPlatform: "desc" } },
     }),
+    getDiscoveryCoverageReport(),
   ]);
 
   const verifiedExpansion = atsExpansion.find((row) => row.status === "verified")?._count._all ?? 0;
@@ -188,6 +190,38 @@ export default async function OverviewPage() {
           {adapterPlatforms.length
             ? ` · ${adapterPlatforms.map((row) => `${row.detectedPlatform} ${row._count._all}`).join(" · ")}`
             : ""}
+        </div>
+      </div>
+
+      <div className={cls.card + " mt-6"}>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold">GitHub vs direct coverage experiment</h2>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Cohort started {new Date(coverage.startedAt).toLocaleString()}
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Counts only internships first discovered after the experiment began, so the historical bulk import cannot bias the result.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div><div className="text-xs text-gray-500">Cohort</div><div className="text-2xl font-bold">{coverage.total}</div></div>
+          <div><div className="text-xs text-gray-500">Direct coverage</div><div className="text-2xl font-bold">{coverage.directCoveragePercent}%</div></div>
+          <div><div className="text-xs text-gray-500">GitHub coverage</div><div className="text-2xl font-bold">{coverage.githubCoveragePercent}%</div></div>
+          <div><div className="text-xs text-gray-500">GitHub-only contribution</div><div className="text-2xl font-bold">{coverage.githubUniquePercent}%</div></div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <span>Direct only: <b>{coverage.directOnly}</b></span>
+          <span>Both: <b>{coverage.both}</b></span>
+          <span>GitHub only: <b>{coverage.githubOnly}</b></span>
+          <span>Untracked: <b>{coverage.untracked}</b></span>
+          <span>Direct first: <b>{coverage.overlap.directFirst}</b></span>
+          <span>GitHub first: <b>{coverage.overlap.githubFirst}</b></span>
+          <span>
+            Median GitHub lag: <b>{coverage.overlap.medianGithubLagMinutes == null ? "—" : `${Math.round(coverage.overlap.medianGithubLagMinutes)}m`}</b>
+          </span>
+        </div>
+        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          GitHub-only routing: {coverage.githubOnlyRouting.automaticAts} jobs point to automatically supported ATS boards · {coverage.githubOnlyRouting.customAdapter} require custom coverage.
         </div>
       </div>
 
