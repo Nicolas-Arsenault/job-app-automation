@@ -102,9 +102,12 @@ describe("scoreResumeFit", () => {
     expect(r.matchedSkills).toEqual(
       expect.arrayContaining(["machine learning", "next.js", "postgres", "pytorch"]),
     );
-    expect(r.reasons).toEqual([
-      expect.stringMatching(/matches 4 saved résumé skills/i),
-    ]);
+    expect(r.reasons).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/matches 4 saved résumé skills/i),
+        expect.stringMatching(/domain experience aligns with machine learning/i),
+      ]),
+    );
     expect(r.missingSignals).toEqual([]);
   });
 

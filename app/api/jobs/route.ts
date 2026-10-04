@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     searchParams.get("availability"),
   );
   const q = searchParams.get("q")?.toLowerCase();
-  const sort = searchParams.get("sort") ?? "posted"; // posted | company | fit | salary
+  const sort = searchParams.get("sort") ?? "posted"; // posted | company | fit | priority | salary
   const since = searchParams.get("since") ?? "all"; // 24h | 7d | 30d | all
   // Enrichment / pipeline filters (all optional, comma-lists where sensible).
   const skills = parseList(searchParams.get("skills")); // AND — job must have all
@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
       discoverySystem: string | null;
       skills?: string | null;
       fitReasons?: string | null;
+      fitBaseReasons?: string | null;
     },
   >(
     j: T,
@@ -141,7 +142,7 @@ export async function GET(req: NextRequest) {
     if (category.length && !category.includes(categorizeCompany(j.company, fallbackForSystem(j.discoverySystem)))) return false;
     if (warmOnly && !lookupConnections(connections, j.company)) return false;
     if (goldenOnly && !isGolden(j)) return false;
-    if (fitMin && (j.fitScore ?? -1) < fitMin) return false;
+    if (fitMin && (j.fitBaseScore ?? -1) < fitMin) return false;
     if (salaryMin) {
       const top = j.salaryMax ?? j.salaryMin ?? 0;
       if (top < salaryMin) return false;
@@ -179,6 +180,13 @@ export async function GET(req: NextRequest) {
         posted(b) - posted(a),
     );
   } else if (sort === "fit") {
+    result.sort(
+      (a, b) =>
+        goldenFirst(a, b) ||
+        (b.fitBaseScore ?? -1) - (a.fitBaseScore ?? -1) ||
+        byPosted(a, b),
+    );
+  } else if (sort === "priority") {
     result.sort(
       (a, b) =>
         goldenFirst(a, b) ||

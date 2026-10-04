@@ -77,6 +77,58 @@ test("fills optional professional links and exceptional-work answers", async ({
   await expect(page.locator("#phone")).toHaveValue("");
 });
 
+test("fills SpaceXAI-specific profile fields and accomplishment wording", async ({
+  page,
+}) => {
+  await installContentPanel(page, {
+    html: `
+      <label>Preferred First Name <input id="preferred-name"></label>
+      <label>Full Legal Name in Native Language (e.g. Chinese Characters, Cyrillic, Farsi etc) <input id="native-name" required></label>
+      <label>X Profile <input id="x-profile" type="url"></label>
+      <label>Google Scholar <input id="scholar" type="url"></label>
+      <label>Please select the month you will be able to start your internship.
+        <select id="start-month" required>
+          <option value="">Select...</option>
+          <option value="jan">January</option>
+          <option value="mar">March</option>
+        </select>
+      </label>
+      <label>
+        Please provide a summary highlighting your top two exceptional academic and/or professional accomplishments.
+        <textarea id="accomplishments" required></textarea>
+      </label>
+      <label>SAT Score <input id="sat" required></label>
+      <label>ACT Score <input id="act" required></label>
+    `,
+    profile: {
+      firstName: "Nicolas",
+      preferredName: "Nicolas",
+      nativeFullName: "Nicolas Arsenault",
+      xUrl: "https://x.com/lrdvile",
+      googleScholarUrl: "https://scholar.google.com/citations?user=test",
+      availableStartDate: "2027-01-15",
+      exceptionalWork: "Built two technically exceptional systems.",
+      satScore: "Did not take",
+      actScore: "Did not take",
+    },
+    requiredByDefault: false,
+  });
+
+  expect(await invokeAutofill(page)).toMatchObject({ ok: true, filled: 8 });
+  await expect(page.locator("#preferred-name")).toHaveValue("Nicolas");
+  await expect(page.locator("#native-name")).toHaveValue("Nicolas Arsenault");
+  await expect(page.locator("#x-profile")).toHaveValue("https://x.com/lrdvile");
+  await expect(page.locator("#scholar")).toHaveValue(
+    "https://scholar.google.com/citations?user=test",
+  );
+  await expect(page.locator("#start-month")).toHaveValue("jan");
+  await expect(page.locator("#accomplishments")).toHaveValue(
+    "Built two technically exceptional systems.",
+  );
+  await expect(page.locator("#sat")).toHaveValue("Did not take");
+  await expect(page.locator("#act")).toHaveValue("Did not take");
+});
+
 test("disabling the extension cancels an in-flight profile fill", async ({ page }) => {
   await installContentPanel(page, {
     html: `<label>Email address <input id="applicant-email" autocomplete="email" required></label>`,

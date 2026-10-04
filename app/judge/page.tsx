@@ -247,7 +247,7 @@ export default function JudgePage() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Scored" value={`${status.scored}/${status.eligible}`} hint={`${coverage}% of eligible postings`} />
-        <Stat label="Average fit" value={status.avgScore ?? "—"} hint={status.scored ? "across scored postings" : "run the judge to populate"} />
+        <Stat label="Average résumé fit" value={status.avgScore ?? "—"} hint={status.scored ? "before company and location priority" : "run the judge to populate"} />
         <Stat label="Strong fits" value={status.distribution.strong} hint="score ≥ 70" />
         <Stat label="Last run" value={timeAgo(status.lastScoredAt)} hint={enhancedCount ? `${enhancedCount} enhanced scores` : "deterministic baseline"} />
       </div>
@@ -260,11 +260,11 @@ export default function JudgePage() {
               <strong>{activeProvider}</strong> — {status.providerStatus.status}
             </p>
             <p className="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
-              <strong>No AI required.</strong> Company tiers set score bands;
-              location tiers, salary target, experience, freshness, and résumé
-              overlap rank jobs within them. Configured Golden matches receive
-              a 95 floor. Optional AI adds contextual résumé review, not a
-              replacement for your tier rules.
+              <strong>No AI required.</strong> Résumé fit measures
+              candidate-to-posting evidence independently. Company tier,
+              location, salary, experience, freshness, and Golden rules
+              produce the separate priority rank. Optional AI improves the
+              résumé review; it does not replace your priority preferences.
             </p>
             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
               Stored provenance: {status.providerCounts.copilot} Copilot,{" "}

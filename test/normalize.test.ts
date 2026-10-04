@@ -4,6 +4,7 @@ import {
   normalizeUrl,
   extractExternalId,
   canonicalize,
+  isJobSpecificApplyUrl,
 } from "../lib/sources/normalize";
 import type { NormalizedJob } from "../lib/sources/types";
 
@@ -18,6 +19,32 @@ describe("detectAts", () => {
     expect(detectAts("https://vention.na.teamtailor.com/jobs/123")).toBe("teamtailor");
     expect(detectAts("https://example.com/careers/1")).toBe("unknown");
     expect(detectAts("not a url")).toBe("unknown");
+  });
+});
+
+describe("isJobSpecificApplyUrl", () => {
+  it("recognizes common path and query requisition identifiers", () => {
+    expect(
+      isJobSpecificApplyUrl("https://careers.example.com/jobs?gh_jid=8675309002"),
+    ).toBe(true);
+    expect(
+      isJobSpecificApplyUrl("https://example.com/careers/job/1970393556922922"),
+    ).toBe(true);
+    expect(
+      isJobSpecificApplyUrl(
+        "https://jobs.lever.co/acme/12345678-1234-1234-1234-1234567890ab",
+      ),
+    ).toBe(true);
+    expect(
+      isJobSpecificApplyUrl(
+        "https://acme.wd5.myworkdayjobs.com/Careers/job/Ottawa/Software-Intern_R031631",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects generic careers and search pages", () => {
+    expect(isJobSpecificApplyUrl("https://careers.example.com/jobs")).toBe(false);
+    expect(isJobSpecificApplyUrl("https://careers.example.com/search?team=engineering")).toBe(false);
   });
 });
 
@@ -53,6 +80,35 @@ describe("normalizeUrl", () => {
   });
   it("returns input unchanged when not a URL", () => {
     expect(normalizeUrl("  garbage ")).toBe("garbage");
+  });
+
+  it.each([
+    [
+      "https://apply.workable.com/acme/j/ABC123/apply?utm_source=board",
+      "https://apply.workable.com/acme/j/ABC123",
+    ],
+    [
+      "https://jobs.eu.lever.co/acme/12345678-1234-1234-1234-1234567890ab/apply",
+      "https://jobs.eu.lever.co/acme/12345678-1234-1234-1234-1234567890ab",
+    ],
+    [
+      "https://careers-acme.icims.com/jobs/32343/software-engineer/job?mobile=false",
+      "https://careers-acme.icims.com/jobs/32343/job",
+    ],
+    [
+      "https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Toronto/Intern_R123?utm_source=x",
+      "https://acme.wd5.myworkdayjobs.com/Careers/job/Toronto/Intern_R123",
+    ],
+    [
+      "https://boards.greenhouse.io/embed/job_app?for=acme&gh_jid=12345&utm_source=x",
+      "https://job-boards.greenhouse.io/acme/jobs/12345",
+    ],
+    [
+      "https://apply.careers.microsoft.com/careers?pid=1970393556922922&query=intern&start=0",
+      "https://apply.careers.microsoft.com/careers/job/1970393556922922",
+    ],
+  ])("canonicalizes vendor presentation variants in %s", (input, expected) => {
+    expect(normalizeUrl(input)).toBe(expected);
   });
 });
 
@@ -126,11 +182,23 @@ describe("canonicalize (dedup identity)", () => {
     expect(second.dedupeKey).toBe(first.dedupeKey);
   });
 
-  it("falls back to a fingerprint key for unknown ATS", () => {
+  it("uses a conservative source identity for an unknown ATS", () => {
     const c = canonicalize(
       job({ applyUrl: "https://careers.acme.com/1", atsType: undefined, externalId: null }),
     );
-    expect(c.dedupeKey.startsWith("fp:")).toBe(true);
+    expect(c.dedupeKey.startsWith("source:")).toBe(true);
+    expect(c.dedupeKey).not.toBe(c.fingerprint);
+  });
+
+  it("does not merge unknown-ATS postings from different URLs based on metadata", () => {
+    const first = canonicalize(
+      job({ applyUrl: "https://careers.acme.com/req/one", atsType: undefined, externalId: null }),
+    );
+    const second = canonicalize(
+      job({ applyUrl: "https://careers.acme.com/req/two", atsType: undefined, externalId: null }),
+    );
+    expect(first.fingerprint).toBe(second.fingerprint);
+    expect(first.dedupeKey).not.toBe(second.dedupeKey);
   });
 
   it("gives reposts (new id, same role) the same fingerprint", () => {

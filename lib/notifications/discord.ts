@@ -21,6 +21,9 @@ export interface DiscordJob {
   location: string | null;
   applyUrl: string;
   postedAt: Date | null;
+  employerPostedAt?: Date | null;
+  sourceReportedAt?: Date | null;
+  newnessStatus?: string;
   firstSeenAt: Date;
   discoverySystem: string | null;
   fitScore: number | null;
@@ -102,8 +105,12 @@ export function discordPayload(jobs: DiscordJob[]) {
       fields: [
         {
           name: "Timing",
-          value: job.postedAt
-            ? `Posted ${job.postedAt.toISOString()}`
+          value: job.employerPostedAt
+            ? `Employer posted ${job.employerPostedAt.toISOString()}`
+            : job.sourceReportedAt
+              ? `Community source reported ${job.sourceReportedAt.toISOString()}`
+            : job.postedAt
+              ? `Posted ${job.postedAt.toISOString()}`
             : `First seen ${job.firstSeenAt.toISOString()}`,
           inline: false,
         },
@@ -188,9 +195,12 @@ export async function notifyDiscordForDiscovery(
       location: true,
       applyUrl: true,
       postedAt: true,
+      employerPostedAt: true,
+      sourceReportedAt: true,
+      newnessStatus: true,
       firstSeenAt: true,
       discoverySystem: true,
-      fitScore: true,
+      fitBaseScore: true,
     },
   });
   if (!jobs.length) return { configured: true, candidates: 0, sent: 0, failedBatches: 0 };
@@ -202,7 +212,16 @@ export async function notifyDiscordForDiscovery(
   for (let index = 0; index < jobs.length; index += 10) {
     const batch = jobs.slice(index, index + 10);
     try {
-      const response = await postDiscord(webhookUrl, discordPayload(batch), fetchImpl);
+      const response = await postDiscord(
+        webhookUrl,
+        discordPayload(
+          batch.map(({ fitBaseScore, ...job }) => ({
+            ...job,
+            fitScore: fitBaseScore,
+          })),
+        ),
+        fetchImpl,
+      );
       if (!response.ok) throw new Error(`Discord webhook returned HTTP ${response.status}`);
       sent += batch.length;
     } catch (error) {

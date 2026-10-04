@@ -92,6 +92,35 @@ const TRUSTED_SKILL_SIGNALS = new Set(
   SKILL_VOCAB.map(canonicalSkill),
 );
 
+const ROLE_DOMAINS: Readonly<Record<string, readonly string[]>> = {
+  backend: [
+    "backend", "back-end", "api", "apis", "distributed systems", "microservices",
+    "server", "database", "sql", "kafka", "grpc", "spring", "django", "fastapi",
+  ],
+  frontend: [
+    "frontend", "front-end", "web", "react", "angular", "vue", "javascript",
+    "typescript", "html", "css",
+  ],
+  mobile: ["mobile", "android", "ios", "swift", "kotlin", "react native"],
+  infrastructure: [
+    "infrastructure", "platform", "cloud", "devops", "site reliability", "sre",
+    "kubernetes", "docker", "terraform", "aws", "azure", "gcp", "linux",
+  ],
+  data: [
+    "data engineering", "data pipeline", "analytics", "etl", "spark", "airflow",
+    "warehouse", "bigquery", "snowflake",
+  ],
+  machine_learning: [
+    "machine learning", "deep learning", "artificial intelligence", "ai", "ml",
+    "pytorch", "tensorflow", "computer vision", "nlp", "llm",
+  ],
+  security: ["security", "cybersecurity", "identity", "authentication", "cryptography"],
+  systems: [
+    "systems", "embedded", "firmware", "compiler", "operating systems", "networking",
+    "c++", "rust",
+  ],
+};
+
 function tokenize(s: string | null | undefined): string[] {
   return (
     (s || "").toLowerCase().match(/[a-z0-9+#.]+/g)?.map((t) => t.replace(/\.+$/, "")).filter(Boolean) ??
@@ -219,6 +248,15 @@ function clamp(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+function roleDomains(text: string): string[] {
+  const normalized = normalizePhrase(text);
+  return Object.entries(ROLE_DOMAINS)
+    .filter(([, signals]) =>
+      signals.some((signal) => phraseAppears(normalized, signal)),
+    )
+    .map(([domain]) => domain);
+}
+
 /**
  * Score how well a job matches the candidate's resume.
  *
@@ -287,6 +325,9 @@ export function scoreResumeFit(job: ResumeJobInput, resume: ResumeContext): Resu
   }
 
   // --- Title / role alignment ---
+  // Structured target titles are ideal, but parsed résumés frequently have no
+  // targetRoles field. Domain evidence from projects and work history still
+  // deserves credit (for example backend + APIs + databases).
   const titleTokens = new Set(tokenize(job.title));
   let titleScore = 0;
   let bestRole = "";
@@ -302,6 +343,20 @@ export function scoreResumeFit(job: ResumeJobInput, resume: ResumeContext): Resu
   }
   if (titleScore > 0) {
     reasons.push(`Role aligns with the target title "${bestRole}"`);
+  }
+  const postingDomains = roleDomains(postingText);
+  const resumeDomains = roleDomains(savedResumeText);
+  const matchingDomains = postingDomains.filter((domain) =>
+    resumeDomains.includes(domain),
+  );
+  if (matchingDomains.length > 0) {
+    const domainScore = Math.min(25, 12 + (matchingDomains.length - 1) * 5);
+    if (domainScore > titleScore) titleScore = domainScore;
+    reasons.push(
+      `Résumé domain experience aligns with ${humanList(
+        matchingDomains.slice(0, 4).map((domain) => domain.replace(/_/g, " ")),
+      )}`,
+    );
   }
 
   // --- Summary / broad keyword resonance ---

@@ -39,6 +39,14 @@ model Job {
   applyUrl               String
   description            String?
   postedAt               DateTime?
+  // Publication provenance. `postedAt` remains the best display date for
+  // backwards compatibility; these fields say who supplied that date.
+  employerPostedAt       DateTime?
+  sourceReportedAt       DateTime?
+  firstPartyFirstSeenAt  DateTime?
+  contentHash            String?
+  newnessStatus          String                 @default("unknown") // first_party_new | secondary_new | reopened_confirmed | unknown
+  reopenedAt             DateTime?
   isWorkday              Boolean                @default(false) // flagged, never auto-applied
   // --- Discovery pivot: entry-level SWE finder (see lib/discovery) ---
   country                String? // US | CA | OTHER — geography split for the two lists
@@ -86,9 +94,12 @@ model Job {
   @@index([country])
   @@index([isEntryLevel])
   @@index([fingerprint])
+  @@index([applyUrl])
   @@index([applicationStatus])
   @@index([fitScore])
   @@index([availabilityStatus])
+  @@index([firstPartyFirstSeenAt])
+  @@index([newnessStatus])
 }
 
 // Records that a given source saw a given job (one job, many source sightings).
@@ -260,6 +271,12 @@ model DiscoveryJobSighting {
   firstSeenAt            DateTime        @default(now())
   lastSeenAt             DateTime        @default(now())
   lastSeenRunId          String
+  // Publication date reported by this specific source. This keeps secondary
+  // board dates separate from employer dates in freshness comparisons.
+  reportedPostedAt       DateTime?
+  // Whether this source's own row passed the internship, role and geography
+  // gates at observation time. Job-level enrichment may change later.
+  eligibleInternship     Boolean         @default(false)
   consecutiveMisses      Int             @default(0)
   lastMissingAt          DateTime?
   lastVerifiedAt         DateTime?
@@ -268,6 +285,8 @@ model DiscoveryJobSighting {
   source                 DiscoverySource @relation(fields: [sourceKey], references: [key], onDelete: Cascade)
 
   @@unique([jobId, sourceKey])
+  @@index([reportedPostedAt])
+  @@index([eligibleInternship])
   @@index([sourceKey, lastSeenRunId])
   @@index([jobId, consecutiveMisses])
 }
@@ -284,6 +303,67 @@ model YcAtsCache {
   system    String? // greenhouse | lever | ashby | null (none found)
   token     String?
   checkedAt DateTime @default(now())
+}
+
+// Public ATS boards learned from community-board application links. Candidate
+// URLs are cheap to parse; a bounded validator confirms the public endpoint
+// before the board joins the normal two-hour discovery cycle.
+model DiscoveredAtsBoard {
+  id                String    @id @default(cuid())
+  system            String
+  token             String
+  company           String
+  companyAliases    String    @default("[]")
+  evidenceUrl       String
+  evidenceSource    String?
+  evidenceJobId     String?
+  confidence        Int       @default(100)
+  status            String    @default("pending") // pending | verified | rejected | disabled
+  firstSeenAt       DateTime  @default(now())
+  lastSeenAt        DateTime  @default(now())
+  lastValidatedAt   DateTime?
+  nextRetryAt       DateTime?
+  failureCount      Int       @default(0)
+  lastError         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([system, token])
+  @@index([status, nextRetryAt])
+  @@index([company])
+}
+
+// Employers observed on community boards whose application URL cannot yet be
+// converted into one of the automatically monitored ATS boards above. This is
+// the durable backlog for custom adapters and new ATS resolvers.
+model CommunityEmployerCandidate {
+  companyKey       String   @id
+  company          String
+  detectedPlatform String   @default("unknown")
+  applicationHost  String?
+  exampleApplyUrl  String
+  exampleTitle     String?
+  evidenceSource   String?
+  status           String   @default("needs_adapter") // needs_adapter | resolved | ignored
+  observations     Int      @default(1)
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status, detectedPlatform])
+  @@index([applicationHost])
+  @@index([lastSeenAt])
+}
+
+// A forward-looking cohort used to measure direct employer coverage against
+// community GitHub boards without initial-import/order bias.
+model DiscoveryCoverageExperiment {
+  id        String   @id @default("default")
+  startedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // A parsed snapshot of the user's resume; drives "Refresh Profile".

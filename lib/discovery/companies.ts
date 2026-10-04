@@ -102,7 +102,7 @@ export interface ApiCompany {
     repo: string;
     ref: string;
     path: string;
-    format?: "json" | "markdown";
+    format?: "json" | "markdown" | "csv";
   };
   // Y Combinator directory-expansion source: a static JSON feed of currently
   // hiring YC companies. The runner resolves each company's ATS at scrape time
@@ -182,6 +182,68 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Harvey", method: "api", system: "ashby", token: "harvey", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Replit", method: "api", system: "ashby", token: "replit", countryFilter: "post", queryTerms: SWE_BROAD },
 
+  // ---- Broad mid-market technology coverage. These are first-party public
+  // ATS boards verified against their vendor endpoints; fetching a board once
+  // per two-hour cycle is both fresher and gentler than crawling result pages.
+  { name: "MongoDB", method: "api", system: "greenhouse", token: "mongodb", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Reddit", method: "api", system: "greenhouse", token: "reddit", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Twilio", method: "api", system: "greenhouse", token: "twilio", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "GitLab", method: "api", system: "greenhouse", token: "gitlab", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Elastic", method: "api", system: "greenhouse", token: "elastic", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Okta", method: "api", system: "greenhouse", token: "okta", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Samsara", method: "api", system: "greenhouse", token: "samsara", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Toast", method: "api", system: "greenhouse", token: "toast", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Brex", method: "api", system: "greenhouse", token: "brex", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Asana", method: "api", system: "greenhouse", token: "asana", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Squarespace", method: "api", system: "greenhouse", token: "squarespace", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Duolingo", method: "api", system: "greenhouse", token: "duolingo", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Instacart", method: "api", system: "greenhouse", token: "instacart", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Affirm", method: "api", system: "greenhouse", token: "affirm", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Coursera", method: "api", system: "greenhouse", token: "coursera", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Rubrik", method: "api", system: "greenhouse", token: "rubrik", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Gusto", method: "api", system: "greenhouse", token: "gusto", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Flexport", method: "api", system: "greenhouse", token: "flexport", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "StackAdapt", method: "api", system: "greenhouse", token: "stackadapt", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "TouchBistro", method: "api", system: "greenhouse", token: "touchbistro", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Thinkific", method: "api", system: "greenhouse", token: "thinkific", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Verkada", method: "api", system: "greenhouse", token: "verkada", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "SoFi", method: "api", system: "greenhouse", token: "sofi", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Chime", method: "api", system: "greenhouse", token: "chime", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Roku", method: "api", system: "greenhouse", token: "roku", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Grafana Labs", method: "api", system: "greenhouse", token: "grafanalabs", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "CircleCI", method: "api", system: "greenhouse", token: "circleci", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Cockroach Labs", method: "api", system: "greenhouse", token: "cockroachlabs", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "PagerDuty", method: "api", system: "greenhouse", token: "pagerduty", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "New Relic", method: "api", system: "greenhouse", token: "newrelic", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Webflow", method: "api", system: "greenhouse", token: "webflow", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Block", method: "api", system: "greenhouse", token: "block", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Box", method: "api", system: "greenhouse", token: "boxinc", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Klaviyo", method: "api", system: "greenhouse", token: "klaviyo", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Palantir", method: "api", system: "lever", token: "palantir", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "D2L", method: "api", system: "lever", token: "d2l", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Wattpad", method: "api", system: "lever", token: "wattpad", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Waabi", method: "api", system: "lever", token: "waabi", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Jobber", method: "api", system: "ashby", token: "jobber", countryFilter: "post", queryTerms: SWE_BROAD },
+
+  // ---- Dedicated university / early-career boards. Several employers keep
+  // student requisitions on a separate ATS board, so polling only the main
+  // company board silently misses the exact internships this app targets.
+  // These first-party public feeds were verified live in October 2026.
+  { name: "DoorDash Canada", method: "api", system: "greenhouse", token: "doordashcanada", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Geotab Internships", method: "api", system: "greenhouse", token: "internshiplist2000", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Tenstorrent University", method: "api", system: "greenhouse", token: "tenstorrentuniversity", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Visier", method: "api", system: "greenhouse", token: "visiersolutionsinc", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Astera Labs Early Career", method: "api", system: "greenhouse", token: "asteraearlycareer2027", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Trulioo Co-op & Internships", method: "api", system: "ashby", token: "trulioo-coopandinterns", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Rivian and Volkswagen Group Technologies", method: "api", system: "ashby", token: "rivianvw.tech", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "nCino Early Talent", method: "api", system: "greenhouse", token: "ncinoearlytalent", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Dandy", method: "api", system: "ashby", token: "Dandy", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "CTGT", method: "api", system: "ashby", token: "ctgt", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Circleback", method: "api", system: "ashby", token: "circleback", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Superhuman", method: "api", system: "ashby", token: "Superhuman Platform Inc", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Perchwell", method: "api", system: "ashby", token: "perchwell", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Grow Therapy", method: "api", system: "ashby", token: "grow-therapy", countryFilter: "post", queryTerms: SWE_BROAD },
+
   // ---- Bespoke public JSON endpoints
   { name: "Amazon", method: "api", system: "amazon", countryFilter: "native", queryTerms: SWE },
   { name: "Microsoft", method: "api", system: "microsoft", countryFilter: "native", queryTerms: ["intern"] },
@@ -233,6 +295,18 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Ciena", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "ciena.wd5.myworkdayjobs.com", tenant: "ciena", site: "Careers", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
   { name: "Clio", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "clio.wd3.myworkdayjobs.com", tenant: "clio", site: "ClioCareerSite", searchTerms: ["intern", "co-op"], fetchDescriptions: true } },
   { name: "BlackBerry", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "bb.wd3.myworkdayjobs.com", tenant: "bb", site: "BlackBerry", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true } },
+
+  // ---- Canadian financial institutions and pension funds. These employers
+  // publish student roles on dedicated first-party Workday campus sites. Keep
+  // detail concurrency low: one list request per search and at most two detail
+  // requests at a time is enough on the two-hour schedule.
+  { name: "RBC", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "rbc.wd3.myworkdayjobs.com", tenant: "rbc", site: "RBCEARLYTALENT1", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "TD", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "td.wd3.myworkdayjobs.com", tenant: "td", site: "td_bank_careers", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "BMO", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "bmo.wd3.myworkdayjobs.com", tenant: "bmo", site: "Campus", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "CIBC", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "cibc.wd3.myworkdayjobs.com", tenant: "cibc", site: "campus", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "Manulife", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "manulife.wd3.myworkdayjobs.com", tenant: "manulife", site: "MFCJH_Jobs", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "CPP Investments", method: "api", system: "workday", countryFilter: "post", queryTerms: ["intern"], workday: { host: "cppib.wd10.myworkdayjobs.com", tenant: "cppib", site: "cppinvestments", searchTerms: ["intern", "co-op", "student"], fetchDescriptions: true, detailConcurrency: 2 } },
+  { name: "EQ Bank", method: "api", system: "lever", token: "eqbank", countryFilter: "post", queryTerms: SWE_BROAD },
 
   // ---- Canada-first technology companies. The Quebec cohort covers Montreal,
   // Quebec City, Sherbrooke, and other provincial offices exposed by each board.
@@ -394,6 +468,104 @@ export const BOARD_SOURCES: ApiCompany[] = [
       repo: "Summer2027-Internships",
       ref: "main",
       path: ".github/scripts/listings.json",
+    },
+  },
+  {
+    name: "Canadian Tech Internships 2027",
+    method: "api",
+    system: "githubboard",
+    countryFilter: "post",
+    queryTerms: SWE,
+    board: {
+      owner: "negarprh",
+      repo: "Canadian-Tech-Internships-2027",
+      ref: "main",
+      path: "README.md",
+      format: "markdown",
+    },
+  },
+  {
+    name: "Internship Engine 2027",
+    method: "api",
+    system: "githubboard",
+    countryFilter: "post",
+    queryTerms: SWE,
+    board: {
+      owner: "zshah101",
+      repo: "Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships",
+      ref: "main",
+      path: "data/internships.csv",
+      format: "csv",
+    },
+  },
+  {
+    name: "2027 Tech Jobs Summer Internships",
+    method: "api",
+    system: "githubboard",
+    countryFilter: "post",
+    queryTerms: SWE,
+    board: {
+      owner: "aprameyak",
+      repo: "2027-tech-jobs",
+      ref: "main",
+      path: "SUMMER.md",
+      format: "markdown",
+    },
+  },
+  {
+    name: "2027 Tech Jobs Off-Cycle Internships",
+    method: "api",
+    system: "githubboard",
+    countryFilter: "post",
+    queryTerms: SWE,
+    board: {
+      owner: "aprameyak",
+      repo: "2027-tech-jobs",
+      ref: "main",
+      path: "OFFCYCLE.md",
+      format: "markdown",
+    },
+  },
+  {
+    name: "SpeedyApply 2027 SWE College Jobs",
+    method: "api",
+    system: "githubboard",
+    countryFilter: "post",
+    queryTerms: SWE,
+    board: {
+      owner: "speedyapply",
+      repo: "2027-SWE-College-Jobs",
+      ref: "main",
+      path: "README.md",
+      format: "markdown",
+    },
+  },
+  {
+    name: "sndsh404 Summer 2027 Internships",
+    method: "api",
+    system: "githubboard",
+    countryFilter: "post",
+    queryTerms: SWE,
+    board: {
+      owner: "sndsh404",
+      repo: "summer-2027-internships",
+      ref: "main",
+      path: "README.md",
+      format: "markdown",
+    },
+  },
+  {
+    name: "Ricsign 2027 Internships API",
+    method: "api",
+    system: "githubboard",
+    countryFilter: "post",
+    queryTerms: SWE,
+    board: {
+      owner: "ricsign",
+      repo: "Ricsign-New-Grads-Jobs-2027",
+      ref: "main",
+      path: "data/v1/jobs.json",
+      format: "json",
     },
   },
 ];

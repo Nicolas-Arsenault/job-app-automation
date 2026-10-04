@@ -209,7 +209,7 @@ export interface DiscoverySourceRunContext {
   descriptor: DiscoverySourceDescriptor;
   runId: string;
   startedAt: Date;
-  observedJobIds: Set<string>;
+  observedJobs: Map<string, { reportedPostedAt: Date | null; eligibleInternship: boolean }>;
 }
 
 export interface CompletedDiscoverySourceRun {
@@ -328,38 +328,76 @@ export async function beginDiscoverySourceRun(
     descriptor,
     runId: run.id,
     startedAt,
-    observedJobIds: new Set<string>(),
+    observedJobs: new Map(),
   };
 }
 
 export function recordDiscoveryJobObservation(
   context: DiscoverySourceRunContext | undefined,
   jobId: string,
+  reportedPostedAt: Date | null = null,
+  eligibleInternship = true,
 ) {
-  context?.observedJobIds.add(jobId);
+  if (!context) return;
+  const existing = context.observedJobs.get(jobId);
+  context.observedJobs.set(jobId, {
+    reportedPostedAt: existing?.reportedPostedAt ?? reportedPostedAt,
+    eligibleInternship: existing?.eligibleInternship === true || eligibleInternship,
+  });
 }
 
 async function saveObservedSightings(
   context: DiscoverySourceRunContext,
   seenAt: Date,
 ) {
-  const jobIds = [...context.observedJobIds];
+  const jobIds = [...context.observedJobs.keys()];
   if (jobIds.length === 0) return;
 
   const existing = await prisma.discoveryJobSighting.findMany({
     where: { sourceKey: context.descriptor.key, jobId: { in: jobIds } },
-    select: { jobId: true },
+    select: { jobId: true, reportedPostedAt: true },
   });
   const existingIds = new Set(existing.map((row) => row.jobId));
-  await prisma.discoveryJobSighting.updateMany({
-    where: { sourceKey: context.descriptor.key, jobId: { in: jobIds } },
-    data: {
-      lastSeenAt: seenAt,
-      lastSeenRunId: context.runId,
-      consecutiveMisses: 0,
-      lastMissingAt: null,
-    },
-  });
+  if (existingIds.size > 0) {
+    await prisma.discoveryJobSighting.updateMany({
+      where: { sourceKey: context.descriptor.key, jobId: { in: [...existingIds] } },
+      data: {
+        lastSeenAt: seenAt,
+        lastSeenRunId: context.runId,
+        consecutiveMisses: 0,
+        lastMissingAt: null,
+      },
+    });
+    for (const eligibleInternship of [true, false]) {
+      const ids = [...existingIds].filter(
+        (jobId) =>
+          (context.observedJobs.get(jobId)?.eligibleInternship ?? false) ===
+          eligibleInternship,
+      );
+      if (ids.length) {
+        await prisma.discoveryJobSighting.updateMany({
+          where: { sourceKey: context.descriptor.key, jobId: { in: ids } },
+          data: { eligibleInternship },
+        });
+      }
+    }
+    // Publication dates are immutable evidence. Fill a previously unknown date,
+    // but do not make a stable requisition newer when a relative source label moves.
+    const missingDates = existing.filter((row) => row.reportedPostedAt === null).flatMap((row) => {
+      const reportedPostedAt = context.observedJobs.get(row.jobId)?.reportedPostedAt;
+      return reportedPostedAt ? [{ jobId: row.jobId, reportedPostedAt }] : [];
+    });
+    if (missingDates.length) {
+      await prisma.$transaction(
+        missingDates.map(({ jobId, reportedPostedAt }) =>
+          prisma.discoveryJobSighting.update({
+            where: { jobId_sourceKey: { jobId, sourceKey: context.descriptor.key } },
+            data: { reportedPostedAt },
+          }),
+        ),
+      );
+    }
+  }
 
   const missingIds = jobIds.filter((jobId) => !existingIds.has(jobId));
   if (missingIds.length > 0) {
@@ -370,6 +408,10 @@ async function saveObservedSightings(
         firstSeenAt: seenAt,
         lastSeenAt: seenAt,
         lastSeenRunId: context.runId,
+        reportedPostedAt:
+          context.observedJobs.get(jobId)?.reportedPostedAt ?? null,
+        eligibleInternship:
+          context.observedJobs.get(jobId)?.eligibleInternship ?? false,
       })),
     });
   }
@@ -458,7 +500,16 @@ async function seedLegacySightings(
       company: descriptor.company,
       discoverySystem: descriptor.system,
     },
-    select: { id: true, firstSeenAt: true, lastSeenAt: true },
+    select: {
+      id: true,
+      firstSeenAt: true,
+      lastSeenAt: true,
+      employerPostedAt: true,
+      sourceReportedAt: true,
+      isEntryLevel: true,
+      employmentType: true,
+      country: true,
+    },
   });
   if (jobs.length === 0) return;
 
@@ -479,6 +530,14 @@ async function seedLegacySightings(
       sourceKey: descriptor.key,
       firstSeenAt: job.firstSeenAt,
       lastSeenAt: job.lastSeenAt,
+      reportedPostedAt:
+        descriptor.positiveEvidence === "secondary"
+          ? job.sourceReportedAt
+          : job.employerPostedAt,
+      eligibleInternship:
+        job.isEntryLevel &&
+        job.employmentType === "intern" &&
+        (job.country === "US" || job.country === "CA"),
       // The first complete run is a baseline, not a miss.
       lastSeenRunId: context.runId,
     })),

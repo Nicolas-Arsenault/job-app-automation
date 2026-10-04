@@ -584,6 +584,8 @@ export async function scoreAllJobs(opts: ScoreAllJobsOptions = {}): Promise<Scor
     if (result.missingSignals.length) {
       gaps.push(`Résumé does not show ${result.missingSignals.slice(0, 4).join(", ")}`);
     }
+    const resumeStrengths = [...strengths];
+    const resumeGaps = [...gaps];
     appendContextSignals(strengths, gaps, {
       canonicalLoc,
       locTier,
@@ -604,8 +606,15 @@ export async function scoreAllJobs(opts: ScoreAllJobsOptions = {}): Promise<Scor
 
     const updated = await updateJobScoreFromSnapshot(job, {
       fitBaseScore: result.score,
-      fitBaseReasons: null,
-      fitBaseSummary: null,
+      fitBaseReasons: JSON.stringify([
+        ...resumeStrengths.slice(0, 5).map(fitAdvice),
+        ...resumeGaps.slice(0, 5).map(gapAdvice),
+      ]),
+      fitBaseSummary: deterministicSummary(
+        result.score,
+        resumeStrengths,
+        resumeGaps,
+      ),
       fitScore: adjustedScore,
       fitReasons: JSON.stringify(advice),
       fitSummary: deterministicSummary(adjustedScore, strengths, gaps),

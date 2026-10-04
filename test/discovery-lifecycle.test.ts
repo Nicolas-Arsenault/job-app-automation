@@ -556,7 +556,7 @@ describe("discovery posting lifecycle", () => {
         posting({
           system: "githubboard",
           externalId: "board-copy",
-          applyUrl: "https://example.test/aggregated/123",
+          applyUrl: "https://boards.greenhouse.io/acme/jobs/123?utm_source=board",
         }),
       ],
       1,

@@ -54,9 +54,12 @@
     "prompt"
   ]);
   const optionalAutofillFieldKeys = new Set([
+    "preferredName",
     "linkedinUrl",
     "githubUrl",
     "portfolioUrl",
+    "xUrl",
+    "googleScholarUrl",
     "websiteUrl"
   ]);
   function sendMessage(message) {

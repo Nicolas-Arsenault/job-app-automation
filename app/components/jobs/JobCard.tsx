@@ -113,8 +113,11 @@ const FIT_TONES: Record<FitBand | "unscored" | "golden", FitTone> = {
   },
 };
 
-function fitTone(score: number | null | undefined): FitTone {
-  if (score != null && score >= GOLDEN_JOB_SCORE_FLOOR) {
+function fitTone(
+  score: number | null | undefined,
+  isGolden = false,
+): FitTone {
+  if (isGolden) {
     return FIT_TONES.golden;
   }
   return FIT_TONES[bucketScore(score)];
@@ -151,10 +154,12 @@ function cardTone(status: ApplicationStatus, isNew: boolean, tone: FitTone): str
 
 function JudgeScore({
   score,
+  priorityScore,
   provider,
   tone,
 }: {
   score: number | null;
+  priorityScore: number | null;
   provider: Job["fitProvider"];
   tone: FitTone;
 }) {
@@ -163,13 +168,13 @@ function JudgeScore({
   return (
     <div
       aria-label={
-        score == null ? "Judge score not available" : `Judge score ${score} out of 100`
+        score == null ? "Résumé fit not available" : `Résumé fit ${score} out of 100`
       }
       data-testid="judge-score"
       className={`flex min-h-[96px] w-[92px] shrink-0 flex-col items-center justify-center rounded-2xl border px-2 py-2.5 text-center shadow-sm ${tone.score}`}
     >
       <span className="text-[9px] font-bold uppercase tracking-[0.18em] opacity-60">
-        Match
+        Résumé fit
       </span>
       <span className="mt-1 leading-none">
         <span className="text-3xl font-black tracking-[-0.05em] tabular-nums">{score ?? "--"}</span>
@@ -179,6 +184,14 @@ function JudgeScore({
       <span className="mt-0.5 text-[9px] font-medium uppercase tracking-wide opacity-60">
         {providerLabel}
       </span>
+      {priorityScore != null && (
+        <span
+          className="mt-1 text-[9px] font-semibold opacity-70"
+          title="Company tier, location, freshness, experience, salary and Golden rules"
+        >
+          Priority {priorityScore}
+        </span>
+      )}
     </div>
   );
 }
@@ -241,8 +254,11 @@ function AdviceList({
 }
 
 function FitAdvice({ job, tone }: { job: Job; tone: FitTone }) {
-  if (job.fitScore == null) return null;
-  const advice = splitJudgeAdvice(job.fitReasons, job.fitSummary);
+  if (job.fitBaseScore == null) return null;
+  const advice = splitJudgeAdvice(
+    job.fitBaseReasons.length ? job.fitBaseReasons : job.fitReasons,
+    job.fitBaseSummary ?? job.fitSummary,
+  );
   return (
     <div
       data-testid="fit-advice"
@@ -325,9 +341,9 @@ export function JobCard({
   ]
     .filter(Boolean)
     .join(" · ");
-  const tone = fitTone(job.fitScore);
   const hasGoldenScore =
     job.fitScore != null && job.fitScore >= GOLDEN_JOB_SCORE_FLOOR;
+  const tone = fitTone(job.fitBaseScore, job.isGolden || hasGoldenScore);
   const yoeText =
     job.minYoE == null ? null : job.minYoE === 0 ? "No exp. req." : `${job.minYoE}+ yrs`;
   const employmentText = job.employmentType
@@ -490,7 +506,12 @@ export function JobCard({
 
         </div>
 
-        <JudgeScore score={job.fitScore} provider={job.fitProvider} tone={tone} />
+        <JudgeScore
+          score={job.fitBaseScore}
+          priorityScore={job.fitScore}
+          provider={job.fitProvider}
+          tone={tone}
+        />
 
         <div className="flex w-full shrink-0 flex-row flex-wrap items-center justify-end gap-1.5 lg:w-auto lg:flex-col lg:items-end">
           <a

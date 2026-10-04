@@ -33,6 +33,7 @@
       autocomplete: ["nickname"],
       aliases: [
         "preferred name",
+        "preferred first name",
         "chosen name",
         "preferred or chosen name",
         "nickname",
@@ -88,8 +89,27 @@
         "first name",
         "last name",
         "preferred name",
+        "native language",
         "company name",
         "school name"
+      ],
+      controls: ["text"]
+    },
+    {
+      key: "nativeFullName",
+      label: "Full legal name in native language",
+      group: "identity",
+      input: "text",
+      aliases: [
+        "full legal name in native language",
+        "legal name in native language",
+        "full name in native language",
+        "native language name",
+        "name in native script"
+      ],
+      exactAliases: [
+        "full legal name in native language",
+        "legal name in native language"
       ],
       controls: ["text"]
     },
@@ -526,6 +546,36 @@
       excludeAliases: ["company website"],
       controls: ["text"],
       placeholder: "https://janedoe.dev"
+    },
+    {
+      key: "xUrl",
+      label: "X or Twitter profile URL",
+      group: "links",
+      input: "url",
+      aliases: [
+        "x profile",
+        "x profile url",
+        "x url",
+        "twitter profile",
+        "twitter profile url",
+        "twitter url"
+      ],
+      exactAliases: ["x profile", "twitter profile"],
+      controls: ["text"]
+    },
+    {
+      key: "googleScholarUrl",
+      label: "Google Scholar URL",
+      group: "links",
+      input: "url",
+      aliases: [
+        "google scholar",
+        "google scholar page",
+        "google scholar profile",
+        "google scholar url"
+      ],
+      exactAliases: ["google scholar", "google scholar profile"],
+      controls: ["text"]
     },
     {
       key: "school",
@@ -966,6 +1016,21 @@
         "start availability"
       ],
       controls: ["text", "date"]
+    },
+    {
+      key: "availableStartMonth",
+      label: "Available internship start month",
+      group: "eligibility",
+      stored: false,
+      input: "select",
+      aliases: [
+        "month you will be able to start your internship",
+        "internship start month",
+        "available internship start month",
+        "month available to start",
+        "preferred internship start month"
+      ],
+      controls: ["text", "select", "combobox"]
     },
     {
       key: "noticePeriod",
@@ -1476,9 +1541,19 @@
         "demonstrate exceptional work",
         "example of exceptional work",
         "evidence of exceptional work",
-        "exceptional work"
+        "exceptional work",
+        "top two exceptional academic and professional accomplishments",
+        "exceptional academic or professional accomplishments",
+        "exceptional academic and professional accomplishments",
+        "summary highlighting your top two accomplishments",
+        "top two accomplishments"
       ],
-      exactAliases: ["demonstration of exceptional work", "exceptional work"],
+      exactAliases: [
+        "demonstration of exceptional work",
+        "exceptional work",
+        "top two exceptional academic and professional accomplishments",
+        "exceptional academic or professional accomplishments"
+      ],
       controls: ["text", "textarea"],
       maxLength: 20000,
       placeholder: "Describe a specific example of exceptional work."
@@ -1652,6 +1727,18 @@
     };
   }
 
+  function startDateParts(value) {
+    const match = String(value || "")
+      .trim()
+      .match(/^(\d{4})-(0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/);
+    if (!match) return { month: "", year: "" };
+    const months = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    return { month: months[Number(match[2]) - 1], year: match[1] };
+  }
+
   function buildEffectiveProfile(profile = {}, context = {}) {
     const firstName = String(profile.firstName || "").trim();
     const lastName = String(profile.lastName || "").trim();
@@ -1717,6 +1804,7 @@
       profile.graduationDate,
       profile.graduationDateExact
     );
+    const startDateValues = startDateParts(profile.availableStartDate);
     const relocationChoice =
       profile.willingToRelocate === false
         ? "no"
@@ -1770,6 +1858,7 @@
       graduationDateInput: graduationValues.input,
       graduationMonth: graduationValues.month,
       graduationYear: graduationValues.year,
+      availableStartMonth: startDateValues.month,
       coverLetter: renderCoverLetter(profile.coverLetter, context, profile)
     };
   }
@@ -1956,6 +2045,7 @@
       if (
         ["undergraduateGpa", "graduateGpa", "doctorateGpa"].includes(field.key) &&
         value &&
+        !/^(?:n\/?a|not applicable)$/i.test(value) &&
         (!/^\d{1,2}(?:\.\d{1,3})?$/.test(value) ||
           Number(value) < 0 ||
           Number(value) > 10)
@@ -1965,6 +2055,7 @@
       if (
         field.key === "satScore" &&
         value &&
+        !/^(?:did not take|not taken|n\/?a|not applicable)$/i.test(value) &&
         (!/^\d{3,4}$/.test(value) || Number(value) < 400 || Number(value) > 2400)
       ) {
         value = "";
@@ -1972,6 +2063,7 @@
       if (
         field.key === "actScore" &&
         value &&
+        !/^(?:did not take|not taken|n\/?a|not applicable)$/i.test(value) &&
         (!/^\d{1,2}$/.test(value) || Number(value) < 1 || Number(value) > 36)
       ) {
         value = "";
@@ -1979,6 +2071,7 @@
       if (
         field.key === "greScore" &&
         value &&
+        !/^(?:did not take|not taken|n\/?a|not applicable)$/i.test(value) &&
         (!/^\d{3,4}$/.test(value) || Number(value) < 130 || Number(value) > 1600)
       ) {
         value = "";

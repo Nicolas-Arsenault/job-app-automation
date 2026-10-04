@@ -567,7 +567,10 @@ async function teamtailor(c: ApiCompany): Promise<DiscoveryPosting[]> {
       isNonEmptyString(job?.title) &&
       isHttpUrl(job?.url),
   );
-  return mapPool(jobs, 6, async (job) => {
+  return mapPool(jobs, 2, async (job) => {
+    if (process.env.NODE_ENV !== "test") {
+      await wait(250 + Math.floor(Math.random() * 251));
+    }
     const detailHtml = await fetchText(job.url ?? "");
     return mk("teamtailor", c.name, {
       title: job.title ?? "",
@@ -1040,7 +1043,7 @@ async function workday(
   const rows = new Map<string, WorkdayListRow>();
   const configuredSearches = w.searchTerms ?? c.queryTerms;
   const searches = ctx.internshipsOnly && !w.appliedFacets
-    ? INTERNSHIP_SEARCH_TERMS
+    ? (w.searchTerms ?? INTERNSHIP_SEARCH_TERMS)
     : configuredSearches;
   for (const searchText of searches) {
     for (let offset = 0; offset < 100; offset += 20) {
@@ -1099,6 +1102,9 @@ async function workday(
       };
     };
     try {
+      if (process.env.NODE_ENV !== "test") {
+        await wait(350 + Math.floor(Math.random() * 301));
+      }
       data = (await fetchJson(
         `https://${w.host}/wday/cxs/${w.tenant}/${w.site}${j.externalPath}`,
       )) as typeof data;
@@ -1444,14 +1450,20 @@ interface BoardListing {
   company_name?: string;
   title?: string;
   url?: string;
+  apply_url?: string;
   locations?: string[] | string;
   active?: boolean;
   is_visible?: boolean;
   visible?: boolean;
   date_posted?: number | string;
   date_updated?: number | string;
+  posted_at?: number | string;
+  first_seen?: number | string;
   id?: string;
+  uid?: string;
   sponsorship?: string;
+  degree?: string;
+  track?: string;
 }
 
 function stripMarkdown(value: string): string {
@@ -1467,18 +1479,42 @@ function stripMarkdown(value: string): string {
 }
 
 function markdownLink(value: string): string {
-  return (
-    value.match(/<a\s+[^>]*href=["']([^"']+)["']/i)?.[1] ??
-    value.match(/\[[^\]]*]\((https?:\/\/[^)\s]+)\)/i)?.[1] ??
-    value.match(/https?:\/\/[^\s<>"')]+/i)?.[0] ??
-    ""
-  );
+  const htmlLink = value.match(/<a\s+[^>]*href=["']([^"']+)["']/i)?.[1];
+  if (htmlLink) return htmlLink;
+  // Image badges are commonly nested inside the actual apply link. Choosing
+  // the final Markdown target avoids returning the shields.io image URL.
+  const markdownTargets = [...value.matchAll(/\]\((https?:\/\/[^)\s]+)\)/gi)]
+    .map((match) => match[1]);
+  return markdownTargets.at(-1) ?? value.match(/https?:\/\/[^\s<>"')]+/i)?.[0] ?? "";
+}
+
+function boardDate(value: string): Date | null {
+  const text = stripMarkdown(value).trim();
+  if (!text || text === "—" || text === "-") return null;
+  const age = text.match(/^(\d+)\s*([mhd])$/i);
+  if (age) {
+    const unitMs = age[2].toLowerCase() === "m" ? 60_000 : age[2].toLowerCase() === "h" ? 3_600_000 : 86_400_000;
+    return new Date(Date.now() - Number(age[1]) * unitMs);
+  }
+  const withYear = /^[A-Za-z]{3,9}\s+\d{1,2}$/.test(text)
+    ? `${text}, ${new Date().getUTCFullYear()}`
+    : text;
+  return /^[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}$/.test(withYear)
+    ? toDate(`${withYear} UTC`)
+    : toDate(withYear);
 }
 
 function githubMarkdownBoard(c: ApiCompany, markdown: string): DiscoveryPosting[] {
   const lines = markdown.split(/\r?\n/);
   let columns:
-    | { company: number; title: number; location: number; apply: number; status: number }
+    | {
+        company: number;
+        title: number;
+        location: number;
+        apply: number;
+        status: number;
+        posted: number;
+      }
     | undefined;
   let previousCompany = "";
   const out: DiscoveryPosting[] = [];
@@ -1494,16 +1530,27 @@ function githubMarkdownBoard(c: ApiCompany, markdown: string): DiscoveryPosting[
     const company = normalized.findIndex((cell) => cell.includes("company"));
     const title = normalized.findIndex((cell) => cell.includes("role") || cell.includes("position"));
     const location = normalized.findIndex((cell) => cell.includes("location"));
-    const apply = normalized.findIndex((cell) => cell.includes("application") || cell === "apply");
+    const apply = normalized.findIndex(
+      (cell) =>
+        cell.includes("application") ||
+        cell === "apply" ||
+        cell === "link" ||
+        cell === "posting",
+    );
     const status = normalized.findIndex((cell) => cell.includes("status"));
-    if ([company, title, location, apply, status].every((index) => index >= 0)) {
-      columns = { company, title, location, apply, status };
+    const posted = normalized.findIndex(
+      (cell) => cell.includes("date") || cell === "posted" || cell === "added" || cell === "age",
+    );
+    if ([company, title, location, apply].every((index) => index >= 0)) {
+      columns = { company, title, location, apply, status, posted };
       continue;
     }
     if (!columns || cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
 
-    const statusText = stripMarkdown(cells[columns.status] ?? "").toLowerCase();
-    if (!statusText.includes("open") || statusText.includes("closed")) continue;
+    const statusText = columns.status >= 0
+      ? stripMarkdown(cells[columns.status] ?? "").toLowerCase()
+      : "";
+    if (statusText.includes("closed") || statusText.includes("inactive")) continue;
     const companyCell = stripMarkdown(cells[columns.company] ?? "");
     if (companyCell && companyCell !== "↳") previousCompany = companyCell;
     const companyName = companyCell === "↳" ? previousCompany : companyCell;
@@ -1518,12 +1565,87 @@ function githubMarkdownBoard(c: ApiCompany, markdown: string): DiscoveryPosting[
         applyUrl,
         externalId: applyUrl,
         description: "",
-        postedAt: null,
+        postedAt: columns.posted >= 0 ? boardDate(cells[columns.posted] ?? "") : null,
       }),
     );
   }
   if (!columns) {
     throw new Error(`${c.name} Markdown board did not contain the expected jobs table`);
+  }
+  return out;
+}
+
+function parseCsvRows(csv: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < csv.length; index++) {
+    const character = csv[index];
+    if (character === '"') {
+      if (quoted && csv[index + 1] === '"') {
+        field += '"';
+        index++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "," && !quoted) {
+      row.push(field);
+      field = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && csv[index + 1] === "\n") index++;
+      row.push(field);
+      if (row.some((value) => value.length > 0)) rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += character;
+    }
+  }
+  row.push(field);
+  if (row.some((value) => value.length > 0)) rows.push(row);
+  return rows;
+}
+
+function githubCsvBoard(c: ApiCompany, csv: string): DiscoveryPosting[] {
+  const rows = parseCsvRows(csv);
+  const headers = rows.shift()?.map((header) => header.trim().toLowerCase()) ?? [];
+  const column = (...names: string[]) => headers.findIndex((header) => names.includes(header));
+  const companyColumn = column("company", "company_name");
+  const titleColumn = column("title", "role", "position");
+  const locationColumn = column("location", "locations");
+  const urlColumn = column("url", "apply_url", "application_url", "link");
+  const idColumn = column("id", "job_id");
+  const postedColumn = column("posted_at", "date_posted", "date_added", "first_seen_at");
+  const sponsorshipColumn = column("sponsorship", "visa");
+  const statusColumn = column("status");
+  if ([companyColumn, titleColumn, locationColumn, urlColumn].some((index) => index < 0)) {
+    throw new Error(`${c.name} CSV board did not contain the expected job columns`);
+  }
+
+  const seen = new Set<string>();
+  const out: DiscoveryPosting[] = [];
+  for (const row of rows) {
+    const status = statusColumn >= 0 ? (row[statusColumn] ?? "").toLowerCase() : "";
+    if (status.includes("closed") || status.includes("inactive")) continue;
+    const company = (row[companyColumn] ?? "").trim();
+    const title = (row[titleColumn] ?? "").trim();
+    const location = (row[locationColumn] ?? "").trim();
+    const applyUrl = (row[urlColumn] ?? "").trim();
+    const id = (idColumn >= 0 ? row[idColumn] : "")?.trim() || applyUrl;
+    if (!company || !title || !location || !isHttpUrl(applyUrl) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(
+      mk("githubboard", company, {
+        title,
+        location,
+        applyUrl,
+        externalId: id,
+        description: "",
+        postedAt: postedColumn >= 0 ? boardDate(row[postedColumn] ?? "") : null,
+        sponsorship: sponsorshipColumn >= 0 ? row[sponsorshipColumn] ?? null : null,
+      }),
+    );
   }
   return out;
 }
@@ -1538,20 +1660,25 @@ async function githubBoard(c: ApiCompany): Promise<DiscoveryPosting[]> {
   if (b.format === "markdown") {
     return githubMarkdownBoard(c, body);
   }
+  if (b.format === "csv") {
+    return githubCsvBoard(c, body);
+  }
   const data = JSON.parse(body) as
     | BoardListing[]
-    | { data?: BoardListing[]; listings?: BoardListing[] };
-  const rows: BoardListing[] = Array.isArray(data) ? data : (data.listings ?? data.data ?? []);
+    | { data?: BoardListing[]; listings?: BoardListing[]; jobs?: BoardListing[] };
+  const rows: BoardListing[] = Array.isArray(data)
+    ? data
+    : (data.listings ?? data.data ?? data.jobs ?? []);
   const out: DiscoveryPosting[] = [];
   const seen = new Set<string>();
   for (const r of rows) {
     if (r.active === false) continue;
     if (r.is_visible === false || r.visible === false) continue;
-    const applyUrl = (r.url ?? "").trim();
+    const applyUrl = (r.url ?? r.apply_url ?? "").trim();
     const title = (r.title ?? "").trim();
     const company = (r.company_name ?? "").trim();
     if (!applyUrl || !title || !company) continue;
-    const id = String(r.id ?? applyUrl);
+    const id = String(r.id ?? r.uid ?? applyUrl);
     if (seen.has(id)) continue;
     seen.add(id);
     const location = Array.isArray(r.locations)
@@ -1563,8 +1690,8 @@ async function githubBoard(c: ApiCompany): Promise<DiscoveryPosting[]> {
         location,
         applyUrl,
         externalId: id,
-        description: "",
-        postedAt: toDate(r.date_posted ?? r.date_updated),
+        description: r.degree ? `Degree: ${r.degree}.` : "",
+        postedAt: toDate(r.date_posted ?? r.posted_at ?? r.first_seen ?? r.date_updated),
         sponsorship: r.sponsorship ?? null,
       }),
     );
@@ -1624,7 +1751,7 @@ async function watchlist(c: ApiCompany, ctx: FetchContext): Promise<DiscoveryPos
   const boards = await resolveYcBoards(companies, {
     prisma,
     fetchText: (url) => fetchText(url, 8000),
-    concurrency: Math.min(8, Math.max(1, companies.length)),
+    concurrency: Math.min(2, Math.max(1, companies.length)),
     onProbeFailure: (company, error) =>
       ctx.onWarning?.(
         `Watchlist ATS discovery unavailable for ${company.name}: ${
@@ -1633,7 +1760,7 @@ async function watchlist(c: ApiCompany, ctx: FetchContext): Promise<DiscoveryPos
       ),
   });
 
-  const perBoard = await mapPool(boards, 8, async (board) => {
+  const perBoard = await mapPool(boards, 2, async (board) => {
     const synthetic: ApiCompany = {
       name: board.name,
       method: "api",

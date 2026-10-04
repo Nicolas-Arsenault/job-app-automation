@@ -51,11 +51,89 @@ export function normalizeUrl(url: string): string {
       if (isTrackingQueryParam(name)) u.searchParams.delete(name);
     }
     u.searchParams.sort();
+
+    const host = u.hostname.toLowerCase();
+    const parts = u.pathname.split("/").filter(Boolean);
+
+    // Vendor-specific canonical forms remove presentation-only path segments
+    // while retaining the employer/account and requisition identity. These are
+    // strict transformations; no title similarity is used for deduplication.
+    if (host === "apply.workable.com" && parts[1]?.toLowerCase() === "j") {
+      u.pathname = `/${parts[0]}/j/${parts[2]}`;
+      u.search = "";
+    } else if (
+      (host === "jobs.lever.co" || host === "jobs.eu.lever.co") &&
+      parts[2]?.toLowerCase() === "apply"
+    ) {
+      u.pathname = `/${parts[0]}/${parts[1]}`;
+      u.search = "";
+    } else if (host.endsWith(".icims.com")) {
+      const jobsIndex = parts.findIndex((part) => part.toLowerCase() === "jobs");
+      const id = jobsIndex >= 0 ? parts[jobsIndex + 1] : undefined;
+      if (id && /^\d+$/.test(id)) {
+        u.pathname = `/jobs/${id}/job`;
+        u.search = "";
+      }
+    } else if (host === "apply.careers.microsoft.com") {
+      const id = u.searchParams.get("pid") ?? parts.at(-1);
+      if (id && /^\d{8,}$/.test(id)) {
+        u.pathname = `/careers/job/${id}`;
+        u.search = "";
+      }
+    } else if (
+      host.includes("myworkdayjobs.com") &&
+      /^[a-z]{2}-[a-z]{2}$/i.test(parts[0] ?? "")
+    ) {
+      u.pathname = `/${parts.slice(1).join("/")}`;
+    } else if (
+      (host === "boards.greenhouse.io" || host === "job-boards.greenhouse.io") &&
+      parts[0]?.toLowerCase() === "embed"
+    ) {
+      const board = u.searchParams.get("for");
+      const id = u.searchParams.get("gh_jid") ?? u.searchParams.get("token");
+      if (board && id && /^\d+$/.test(id)) {
+        u.hostname = "job-boards.greenhouse.io";
+        u.pathname = `/${board}/jobs/${id}`;
+        u.search = "";
+      }
+    }
+
     let s = u.toString();
     if (s.endsWith("/")) s = s.slice(0, -1);
     return s;
   } catch {
     return url.trim();
+  }
+}
+
+const JOB_ID_QUERY_PARAM_RE = /^(?:gh_jid|job_?id|jid|requisition_?id|req_?id)$/i;
+const JOB_ID_PATH_SEGMENT_RE = /^(?:[a-z]{0,4}[-_])?\d{5,}(?:-\d+)?$/i;
+const WORKDAY_REQUISITION_SUFFIX_RE = /(?:^|[_-])(?:r|jr|req)[-_]?\d{4,}(?:-\d+)?$/i;
+
+// Exact URL equality is a strong dedupe signal only when the URL identifies a
+// particular requisition. Some feeds link every role to the same generic
+// careers/search page, so those URLs must not collapse unrelated jobs.
+export function isJobSpecificApplyUrl(url: string): boolean {
+  try {
+    const parsed = new URL(normalizeUrl(url));
+    const atsType = detectAts(parsed.toString());
+    if (atsType !== "unknown" && extractExternalId(atsType, parsed.toString())) {
+      return true;
+    }
+    for (const [name, value] of parsed.searchParams) {
+      if (JOB_ID_QUERY_PARAM_RE.test(name) && value.trim().length > 0) return true;
+    }
+
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    return segments.some(
+      (segment) =>
+        UUID_RE.test(segment) ||
+        JOB_ID_PATH_SEGMENT_RE.test(segment) ||
+        WORKDAY_REQUISITION_SUFFIX_RE.test(segment) ||
+        /^(?:job|req|jr)[-_]?\d{4,}$/i.test(segment),
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -90,6 +168,14 @@ export function extractExternalId(
     try {
       const match = new URL(applyUrl).pathname.match(/\/jobs\/(\d+)\b/i);
       if (match) return match[1];
+    } catch {
+      // Fall through to a source-provided ID when the URL is malformed.
+    }
+  }
+  if (atsType === "workable") {
+    try {
+      const match = new URL(applyUrl).pathname.match(/^\/([^/]+)\/j\/([^/]+)/i);
+      if (match) return `${match[1]}:${match[2]}`;
     } catch {
       // Fall through to a source-provided ID when the URL is malformed.
     }
@@ -137,7 +223,15 @@ export function canonicalize(n: NormalizedJob): Canonical {
     .update([slug(n.company), normalizeTitle(n.title), slug(n.location || "")].join("|"))
     .digest("hex");
   const fingerprint = `fp:${fpHash}`;
-  const dedupeKey =
-    atsType !== "unknown" && externalId ? `${atsType}:${externalId}` : fingerprint;
+  const conservativeHash = createHash("sha1")
+    .update(
+      externalId
+        ? [applyUrl, externalId].join("|")
+        : [applyUrl, slug(n.company), normalizeTitle(n.title), slug(n.location || "")].join("|"),
+    )
+    .digest("hex");
+  const dedupeKey = atsType !== "unknown" && externalId
+    ? `${atsType}:${externalId}`
+    : `source:${conservativeHash}`;
   return { dedupeKey, atsType, externalId, applyUrl, fingerprint };
 }

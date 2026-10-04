@@ -331,8 +331,8 @@ export function classifySponsorship(input: {
   const first = (input.sponsorship ?? "").toLowerCase();
   if (first) {
     if (/citizen|clearance/.test(first)) return "citizenship";
-    if (/does not|no sponsorship|not offer|will not/.test(first)) return "none";
-    if (/offer|available|provide|yes/.test(first)) return "offers";
+    if (/does not|no[-_ ]sponsorship|not offer|will not/.test(first)) return "none";
+    if (/offer|available|provide|yes|sponsors?/.test(first)) return "offers";
     if (/other/.test(first)) return "unknown";
   }
   const t = (input.description ?? "").toLowerCase();

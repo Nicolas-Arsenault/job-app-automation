@@ -21,8 +21,54 @@ function posting(over: Partial<DiscoveryPosting>): DiscoveryPosting {
 
 beforeEach(resetDb);
 
-describe("cross-source dedup (discovery persist)", () => {
-  it("keeps the company-site card and suppresses the same role from a board", async () => {
+describe("conservative cross-source dedup (discovery persist)", () => {
+  it("keeps employer and community timestamps separate", async () => {
+    const communityDate = new Date("2026-10-03T12:00:00Z");
+    await ingestPostings(
+      [posting({
+        system: "githubboard",
+        externalId: "board-1",
+        applyUrl: "https://boards.greenhouse.io/acme/jobs/1",
+        postedAt: communityDate,
+      })],
+      true,
+    );
+    const secondary = await prisma.job.findFirstOrThrow();
+    expect(secondary).toMatchObject({
+      employerPostedAt: null,
+      sourceReportedAt: communityDate,
+      firstPartyFirstSeenAt: null,
+      newnessStatus: "secondary_new",
+    });
+
+    const employerDate = new Date("2026-10-02T12:00:00Z");
+    await ingestPostings(
+      [posting({ externalId: "1", postedAt: employerDate })],
+      true,
+    );
+    const promoted = await prisma.job.findFirstOrThrow();
+    expect(promoted.employerPostedAt).toEqual(employerDate);
+    expect(promoted.sourceReportedAt).toEqual(communityDate);
+    expect(promoted.firstPartyFirstSeenAt).not.toBeNull();
+    expect(promoted.newnessStatus).toBe("first_party_new");
+  });
+
+  it("does not make a stable requisition newer when a relative timestamp moves", async () => {
+    const firstDate = new Date("2026-10-01T12:00:00Z");
+    await ingestPostings([posting({ postedAt: firstDate })], true);
+    const firstPartySeen = (await prisma.job.findFirstOrThrow()).firstPartyFirstSeenAt;
+
+    await ingestPostings(
+      [posting({ postedAt: new Date("2026-10-04T12:00:00Z") })],
+      true,
+    );
+    const job = await prisma.job.findFirstOrThrow();
+    expect(job.postedAt).toEqual(firstDate);
+    expect(job.employerPostedAt).toEqual(firstDate);
+    expect(job.firstPartyFirstSeenAt).toEqual(firstPartySeen);
+  });
+
+  it("keeps both rows when similar titles point at different URLs", async () => {
     await ingestPostings([posting({})], true);
     expect(await prisma.job.count()).toBe(1);
 
@@ -33,10 +79,9 @@ describe("cross-source dedup (discovery persist)", () => {
       true,
     );
 
-    expect(await prisma.job.count()).toBe(1); // deduped — still one card
-    const job = await prisma.job.findFirstOrThrow();
-    expect(job.discoverySystem).toBe("greenhouse"); // the native listing won
-    expect(job.applyUrl).toContain("greenhouse");
+    // Similar metadata is not proof of identity. False duplicates are safer
+    // than hiding a separate requisition.
+    expect(await prisma.job.count()).toBe(2);
   });
 
   it("promotes a pre-existing board card when the native source appears later", async () => {
@@ -45,7 +90,7 @@ describe("cross-source dedup (discovery persist)", () => {
         posting({
           system: "githubboard",
           externalId: "board-1",
-          applyUrl: "https://example.com/careers?jobId=1",
+          applyUrl: "https://boards.greenhouse.io/acme/jobs/12345?utm_source=board",
         }),
       ],
       true,
@@ -54,8 +99,8 @@ describe("cross-source dedup (discovery persist)", () => {
     await ingestPostings(
       [
         posting({
-          externalId: "native-1",
-          applyUrl: "https://boards.greenhouse.io/acme/jobs/native-1",
+          externalId: "12345",
+          applyUrl: "https://boards.greenhouse.io/acme/jobs/12345",
         }),
       ],
       true,
@@ -63,17 +108,25 @@ describe("cross-source dedup (discovery persist)", () => {
 
     expect(await prisma.job.count()).toBe(1);
     expect(await prisma.job.findFirstOrThrow()).toMatchObject({
-      dedupeKey: "greenhouse:native-1",
+      dedupeKey: "greenhouse:12345",
       discoverySystem: "greenhouse",
-      applyUrl: "https://boards.greenhouse.io/acme/jobs/native-1",
+      applyUrl: "https://boards.greenhouse.io/acme/jobs/12345",
     });
   });
 
   it("does NOT collapse an employer's distinct same-title reqs from one system", async () => {
     await ingestPostings(
       [
-        posting({ externalId: "1", location: "Seattle, WA" }),
-        posting({ externalId: "2", location: "New York, NY" }),
+        posting({
+          externalId: "1",
+          location: "Seattle, WA",
+          applyUrl: "https://boards.greenhouse.io/acme/jobs/1",
+        }),
+        posting({
+          externalId: "2",
+          location: "New York, NY",
+          applyUrl: "https://boards.greenhouse.io/acme/jobs/2",
+        }),
       ],
       true,
     );
@@ -81,7 +134,7 @@ describe("cross-source dedup (discovery persist)", () => {
     expect(await prisma.job.count()).toBe(2);
   });
 
-  it("dedupes the same role appearing on two different boards", async () => {
+  it("keeps uncertain board overlaps when their apply URLs differ", async () => {
     await ingestPostings(
       [posting({ system: "githubboard", externalId: "a", applyUrl: "https://board-a/acme/1" })],
       true,
@@ -90,10 +143,10 @@ describe("cross-source dedup (discovery persist)", () => {
       [posting({ system: "githubboard", externalId: "b", applyUrl: "https://board-b/acme/1" })],
       true,
     );
-    expect(await prisma.job.count()).toBe(1);
+    expect(await prisma.job.count()).toBe(2);
   });
 
-  it("dedupes cross-source company aliases under the canonical brand", async () => {
+  it("does not merge company aliases without a shared requisition identity", async () => {
     await ingestPostings(
       [
         posting({
@@ -116,7 +169,64 @@ describe("cross-source dedup (discovery persist)", () => {
       true,
     );
 
+    expect(await prisma.job.count()).toBe(2);
+    expect((await prisma.job.findMany()).every((job) => job.company === "Uber")).toBe(true);
+  });
+
+  it("dedupes title variants that point at the same job-specific URL", async () => {
+    const applyUrl = "https://job-boards.greenhouse.io/acme/jobs/8675309002";
+    await ingestPostings(
+      [posting({ title: "2027 Internship - Software Engineer", externalId: "8675309002", applyUrl })],
+      false,
+    );
+    await ingestPostings(
+      [
+        posting({
+          title: "Software Engineer Intern - Backend",
+          system: "githubboard",
+          externalId: "board-8675309002",
+          applyUrl: `${applyUrl}?utm_source=community`,
+        }),
+      ],
+      false,
+    );
+
     expect(await prisma.job.count()).toBe(1);
-    expect((await prisma.job.findFirstOrThrow()).company).toBe("Uber");
+    expect(await prisma.job.findFirstOrThrow()).toMatchObject({
+      title: "2027 Internship - Software Engineer",
+      discoverySystem: "greenhouse",
+      applyUrl,
+    });
+  });
+
+  it("dedupes changed source IDs when the canonical job URL is unchanged", async () => {
+    const applyUrl = "https://apply.careers.microsoft.com/careers/job/1970393556922922";
+    await ingestPostings(
+      [posting({ system: "microsoft", externalId: "old-id", applyUrl })],
+      false,
+    );
+    await ingestPostings(
+      [posting({ system: "microsoft", externalId: "new-id", applyUrl })],
+      false,
+    );
+
+    expect(await prisma.job.count()).toBe(1);
+    expect(await prisma.job.findFirstOrThrow()).toMatchObject({
+      dedupeKey: "microsoft:new-id",
+      externalId: "new-id",
+    });
+  });
+
+  it("does not dedupe unrelated roles that share a generic careers page", async () => {
+    const applyUrl = "https://careers.example.com/search";
+    await ingestPostings(
+      [
+        posting({ title: "Backend Engineer Intern", externalId: "backend", applyUrl }),
+        posting({ title: "Frontend Engineer Intern", externalId: "frontend", applyUrl }),
+      ],
+      false,
+    );
+
+    expect(await prisma.job.count()).toBe(2);
   });
 });

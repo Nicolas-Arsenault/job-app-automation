@@ -1,7 +1,7 @@
 # Job Application Pipeline
 
 A local-first pipeline that **discovers currently-open software internships and co-ops**
-(SWE, DevOps, ML, and related) at 95+ big-tech / Canadian / well-known / VC-backed companies and
+(SWE, DevOps, ML, and related) at 150+ big-tech / Canadian / well-known / VC-backed company boards and
 surfaces them in a dashboard as two separate queues — **United States** and **Canada** —
 sorted newest-first with date filters. Each card links straight to the real posting; you
 apply yourself, or optionally launch a local Chrome extension that fills known fields and
@@ -15,8 +15,8 @@ entry-level / ≤2-years-of-experience scope.
 > with form filling only after you open a posting; it never submits. On top of discovery the
 > project adds a **configurable pipeline**
 > (Settings), **enriched, filterable job cards**, **applied-status tracking**, **dark mode**,
-> a durable **application profile**, **company/location tier boards**, and a **tier-first
-> fit judge** that ranks discovered roles against your preferences and résumé. Legacy
+> a durable **application profile**, **company/location tier boards**, and a judge that
+> reports **résumé fit separately from preference-based priority**. Legacy
 > auto-apply fillers are retained but unused (see
 > [Paused features](#paused-features)). Workday postings share the Jobs queue and have
 > dedicated, human-controlled autofill support.
@@ -25,7 +25,8 @@ entry-level / ≤2-years-of-experience scope.
 
 ## Discovery pipeline
 
-Postings are pulled directly from each company's careers backend. 95+ companies expose a
+Postings are pulled directly from each company's careers backend. 150+ company and dedicated
+early-career boards expose a
 usable public feed (Greenhouse, Ashby, Lever, SmartRecruiters, Workable, Teamtailor, Amazon, Netflix,
 Snap, Phenom, Spotify, Workday CXS) — including a Canada-first cohort concentrated in
 Montreal and Quebec (Genetec, Behaviour Interactive, TrackTik, AlayaCare, Hopper, Nuvei,
@@ -102,7 +103,7 @@ If a direct source sees the same requisition again, that row reopens instead of 
 
 ## Features
 
-- **Company-site discovery** — 95+ public-feed companies (including Canada-first and
+- **Company-site discovery** — 150+ public company and early-career feeds (including Canada-first and
   quant / HFT firms) + Playwright scraping for Apple and Shopify, plus three internship-only
   community GitHub boards including a Canada-specific feed for the long tail
   of employers. See [Discovery pipeline](#discovery-pipeline).
@@ -136,8 +137,8 @@ If a direct source sees the same requisition again, that row reopens instead of 
   type**, extracted deterministically at ingest (no API key).
 - **Strong filtering** — filter the queue by **company category** (Big Tech / AI Lab / Quant
   / Startup), skills (match-all), sponsorship, employment type, source, minimum salary,
-  minimum fit, remote, applied status, plus text search; sort by newest / company / best fit
-  / salary.
+  minimum résumé fit, remote, applied status, plus text search; sort by newest / company /
+  best résumé fit / priority / salary.
 - **Company categories** — every card is tagged and colour-badged by employer type (Big Tech,
   AI Lab, Quant, Startup, or Other for aggregated board employers). Derived on read from a
   single classifier (`lib/discovery/categories.ts`), so re-tagging or adding a firm needs no
@@ -155,9 +156,10 @@ If a direct source sees the same requisition again, that row reopens instead of 
   queue to just those. Matching is local and
   normalized (`lib/connections/*`), so "Amazon Web Services (AWS)" matches the catalog's
   "Amazon" and "Jane Street Capital" matches "Jane Street". See [below](#warm-intros-linkedin-connections).
-- **Tier-first fit judge** — company tier selects a strict score band; résumé fit, location,
-  freshness, experience, and pay only rank jobs within that band. A lower-tier company can
-  never outrank a higher-tier company, and the maximum score is 97. See below.
+- **Separate résumé fit and priority rank** — résumé evidence is scored independently;
+  company tier, location, freshness, experience, pay, and Golden rules produce a separate
+  priority rank. Sorting and minimum-fit filters use résumé fit, so brand preference cannot
+  masquerade as candidate qualification fit. See below.
 - **Comprehensive application profile** — the **Profile** page stores country-specific
   location/work authorization, education, GPAs and test scores, citizenship, clearances,
   software-industry experience, prior employers, compensation expectations, common application
@@ -327,7 +329,7 @@ aggregator that links to a Greenhouse board) collapse into one canonical job.
 
 ### Company catalog (seeded by default)
 
-The active discovery catalog includes **95+ companies** that hire in the
+The active discovery catalog includes **150+ company and dedicated early-career boards** that hire in the
 US/Canada and use easy-apply ATSes — big tech (Airbnb, Roblox, Waymo…), known
 scale-ups (Stripe, Databricks, Figma, OpenAI, Notion…), and startups backed by
 **Y Combinator / a16z / Greylock** (Ramp, Vanta, Cursor, Harvey, Vercel…). Every
@@ -348,7 +350,7 @@ back to when first seen, for the default). **Open & rechecking** is the default;
 closed** exposes confirmed closures without losing saved/applied state. Controls:
 
 - **Date posted** — `Last 24 hours`, `Last 7 days`, `Last 30 days`, `All time`.
-- **Sort** — `Newest` (default), `Company`, `Best fit`, or `Salary`.
+- **Sort** — `Newest` (default), `Company`, `Best résumé fit`, `Priority rank`, or `Salary`.
 - **Facets** — category (Big Tech / AI Lab / Quant / Startup), skills (match-all),
   sponsorship, employment type, source, applied status — each showing live counts — plus
   **Golden only**, **min salary**, **min fit**, **remote only**, **warm intro** (jobs where you
@@ -357,7 +359,7 @@ closed** exposes confirmed closures without losing saved/applied state. Controls
 - **Card actions** — `Open posting ↗` (normal link or extension-assisted handoff) and status buttons (`Save`,
   `Mark applied`, `Dismiss`, `Clear`). **New** (< 48h), **30d+ old**, **Rechecking**, and
   **Closed** badges distinguish age from actual availability evidence. Every Judge score of
-  **95+** receives the blue Golden card and score treatment, whether or not the posting matched a
+  the configured floor receives the blue Golden card and priority treatment, whether or not the posting matched a
   Golden keyword; lower scores never receive that treatment. The sheen stops when the browser
   requests reduced motion.
 
@@ -529,7 +531,7 @@ contextual signals. `POST /api/judge/score`, `GET /api/judge/score`, and `GET
 /api/judge/status` back the shared provider-aware progress display on Judge, Profile, and both
 tier boards. External request failures remain failures (the already-persisted deterministic
 pass is retained) rather than being reported as a successful fallback. Sort/filter the queue
-by **Best fit** / **min fit** to surface the strongest matches.
+by **Best résumé fit** / **minimum résumé fit** to surface the strongest matches.
 
 > **Scrape everything, then judge** — jobs are always stored and deduped first, so
 > retuning Settings or importing a new résumé can be re-scored with no re-scraping.
@@ -609,7 +611,7 @@ npm run e2e       # Playwright: dashboard flows against an isolated seeded DB
 
 Unit tests run against an isolated `prisma/test.db` (migrated fresh each run) and mock all
 network calls, so the suite is offline and deterministic. Coverage includes migrations,
-deduplication, source adapters, enrichment, profile persistence, tier-first scoring, agent
+deduplication, source adapters, enrichment, profile persistence, separate résumé/priority scoring, agent
 evidence, connections, and the configurable classifier.
 
 ### End-to-end (Playwright)
@@ -660,7 +662,7 @@ lib/
   connections/       LinkedIn CSV parsing, normalization and local storage
   discovery/         catalog, adapters.ts (API fetchers), browser.ts (Playwright),
                      entryLevel.ts (config-driven classifiers), enrich.ts, config.ts, run.ts
-  judge/             tier-first scoring, progress coordination, agent export/apply
+  judge/             résumé + priority scoring, progress coordination, agent export/apply
   profile/           resume.ts, pdf.ts (résumé fetch/parse), refresh.ts
   jobs/              shape.ts (API row shaping)
   sources/           legacy pluggable-source engine (dedup/normalize reused by discovery)

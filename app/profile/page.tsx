@@ -620,9 +620,20 @@ export default function ProfilePage() {
               onChange={(e) => setField("nameSuffix", e.target.value)}
             />
           </FieldShell>
+          <FieldShell
+            label="Full legal name in native language"
+            hint="Leave blank unless an application asks for your name in another script or language."
+          >
+            <input
+              aria-label="Full legal name in native language"
+              className={cls.input}
+              value={profile.nativeFullName ?? ""}
+              onChange={(e) => setField("nativeFullName", e.target.value)}
+            />
+          </FieldShell>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <FieldShell label="Email">
             <input
               aria-label="Email"
@@ -689,6 +700,24 @@ export default function ProfilePage() {
                   portfolio: "",
                 }))
               }
+            />
+          </FieldShell>
+          <FieldShell label="X / Twitter profile URL">
+            <input
+              aria-label="X / Twitter profile URL"
+              type="url"
+              className={cls.input}
+              value={profile.xUrl ?? ""}
+              onChange={(e) => setField("xUrl", e.target.value)}
+            />
+          </FieldShell>
+          <FieldShell label="Google Scholar URL">
+            <input
+              aria-label="Google Scholar URL"
+              type="url"
+              className={cls.input}
+              value={profile.googleScholarUrl ?? ""}
+              onChange={(e) => setField("googleScholarUrl", e.target.value)}
             />
           </FieldShell>
         </div>
@@ -851,8 +880,8 @@ export default function ProfilePage() {
           Academic scores
         </h3>
         <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-          Optional autofill values. Blank means the extension will ask you
-          instead of guessing.
+          Optional autofill values. Scores can also be “Did not take” or “N/A”.
+          Blank means the extension will ask you instead of guessing.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[

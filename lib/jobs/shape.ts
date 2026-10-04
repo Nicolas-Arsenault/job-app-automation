@@ -12,12 +12,21 @@ function safeArray(v: string | null | undefined): string[] {
   }
 }
 
-export function shapeJob<T extends { skills?: string | null; fitReasons?: string | null }>(
+export function shapeJob<T extends {
+  skills?: string | null;
+  fitReasons?: string | null;
+  fitBaseReasons?: string | null;
+}>(
   job: T,
-): Omit<T, "skills" | "fitReasons"> & { skills: string[]; fitReasons: string[] } {
+): Omit<T, "skills" | "fitReasons" | "fitBaseReasons"> & {
+  skills: string[];
+  fitReasons: string[];
+  fitBaseReasons: string[];
+} {
   return {
     ...job,
     skills: safeArray(job.skills),
     fitReasons: safeArray(job.fitReasons),
+    fitBaseReasons: safeArray(job.fitBaseReasons),
   };
 }

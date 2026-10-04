@@ -6,7 +6,18 @@ import { classifyEntryLevel, type EntryLevelOptions } from "./entryLevel";
 import { enrich, type Enrichment } from "./enrich";
 import { getDiscoveryConfig, toEntryLevelOptions, type DiscoveryConfigData } from "./config";
 import { DISCOVERY_SOURCES, type ApiCompany } from "./companies";
-import { detectAts, normalizeUrl } from "../sources/normalize";
+import {
+  atsCompanyBoardKey,
+  bootstrapCommunityAtsBoards,
+  observeCommunityAtsBoards,
+  validatePendingAtsBoards,
+  verifiedAtsCompanies,
+} from "./ats-expansion";
+import {
+  detectAts,
+  isJobSpecificApplyUrl,
+  normalizeUrl,
+} from "../sources/normalize";
 import {
   JOB_AVAILABILITY,
   beginDiscoverySourceRun,
@@ -58,6 +69,10 @@ export interface DiscoveryRunResult {
   lifecycle: AvailabilityReconciliationResult;
 }
 
+function politePause(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function dedupeKeyFor(p: DiscoveryPosting): string {
   if (p.externalId) return `${p.system}:${p.externalId}`;
   const h = createHash("sha1")
@@ -70,12 +85,9 @@ function dedupeKeyFor(p: DiscoveryPosting): string {
   return `fp:${h}`;
 }
 
-// Cross-source fingerprint: the same open role often appears on both a company's
-// own career site AND on an aggregator board. This coarse key (company + title +
-// country, ignoring location formatting) lets us recognize that pair and keep a
-// single card. It is deliberately NOT unique — one employer legitimately posts
-// the same title in several cities (distinct reqs, same system), so we only ever
-// dedupe on it ACROSS different discovery systems.
+// Search/display fingerprint only. It is deliberately not an identity key:
+// employers legitimately publish multiple requisitions with the same title and
+// country, and merging those would risk hiding an opening.
 function fingerprintFor(p: DiscoveryPosting): string {
   return createHash("sha1")
     .update(
@@ -88,12 +100,21 @@ function fingerprintFor(p: DiscoveryPosting): string {
     .digest("hex");
 }
 
+function contentHashFor(p: DiscoveryPosting): string {
+  return createHash("sha1")
+    .update([p.title, p.location, p.description].join("|").replace(/\s+/g, " ").trim())
+    .digest("hex");
+}
+
 interface ExistingPosting {
   id: string;
-  kind: "exact" | "cross-source";
+  kind: "exact" | "canonical-url";
   availabilityStatus: string;
   applyUrl: string;
   discoverySystem: string | null;
+  firstPartyFirstSeenAt: Date | null;
+  postedAt: Date | null;
+  employerPostedAt: Date | null;
   lastVerifiedAt: Date | null;
   lastVerificationResult: string | null;
 }
@@ -103,6 +124,9 @@ const existingPostingSelect = {
   availabilityStatus: true,
   applyUrl: true,
   discoverySystem: true,
+  firstPartyFirstSeenAt: true,
+  postedAt: true,
+  employerPostedAt: true,
   lastVerifiedAt: true,
   lastVerificationResult: true,
 } as const;
@@ -110,7 +134,6 @@ const existingPostingSelect = {
 async function findExistingPosting(
   p: DiscoveryPosting,
   dedupeKey = dedupeKeyFor(p),
-  fingerprint = fingerprintFor(p),
 ): Promise<ExistingPosting | null> {
   const exact = await prisma.job.findUnique({
     where: { dedupeKey },
@@ -118,24 +141,24 @@ async function findExistingPosting(
   });
   if (exact) return { ...exact, kind: "exact" };
 
-  const isBoard = p.system === "githubboard";
-  const preferred = await prisma.job.findFirst({
-    where: isBoard
-      ? { fingerprint, discoverySystem: { not: "githubboard" } }
-      : { fingerprint, discoverySystem: "githubboard" },
-    orderBy: { firstSeenAt: "asc" },
-    select: existingPostingSelect,
-  });
-  if (preferred) return { ...preferred, kind: "cross-source" };
+  const applyUrl = normalizeUrl(p.applyUrl);
+  if (isJobSpecificApplyUrl(applyUrl)) {
+    const preferredByUrl = await prisma.job.findFirst({
+      where: { applyUrl, discoverySystem: { not: "githubboard" } },
+      orderBy: { firstSeenAt: "asc" },
+      select: existingPostingSelect,
+    });
+    const sameUrl =
+      preferredByUrl ??
+      (await prisma.job.findFirst({
+        where: { applyUrl },
+        orderBy: { firstSeenAt: "asc" },
+        select: existingPostingSelect,
+      }));
+    if (sameUrl) return { ...sameUrl, kind: "canonical-url" };
+  }
 
-  const crossSource = await prisma.job.findFirst({
-    where: isBoard
-      ? { fingerprint }
-      : { fingerprint, discoverySystem: { not: p.system } },
-    orderBy: { firstSeenAt: "asc" },
-    select: existingPostingSelect,
-  });
-  return crossSource ? { ...crossSource, kind: "cross-source" } : null;
+  return null;
 }
 
 function confirmedOpenData(
@@ -198,6 +221,9 @@ async function persist(
   // The apply destination is the reliable signal (a myworkdayjobs.com URL), with
   // the discovery system as a fallback for native Workday scrapes.
   const isWorkday = atsType === "workday" || p.system === "workday";
+  const isSecondary = p.system === "githubboard";
+  const now = new Date();
+  const reopened = existing?.availabilityStatus === JOB_AVAILABILITY.CLOSED && !isSecondary;
 
   const data = {
     atsType,
@@ -209,6 +235,15 @@ async function persist(
     applyUrl,
     description: p.description || null,
     postedAt: p.postedAt,
+    employerPostedAt: isSecondary ? undefined : p.postedAt,
+    sourceReportedAt: isSecondary ? p.postedAt : undefined,
+    contentHash: contentHashFor(p),
+    newnessStatus: reopened
+      ? "reopened_confirmed"
+      : isSecondary
+        ? "secondary_new"
+        : "first_party_new",
+    reopenedAt: reopened ? now : undefined,
     isWorkday, // Workday roles surface only in the flagged Workday list, never the main lists
     country: p.country,
     isEntryLevel: true,
@@ -223,7 +258,7 @@ async function persist(
     sponsorship: enrichment.sponsorship === "unknown" ? null : enrichment.sponsorship,
     skills: enrichment.skills.length ? JSON.stringify(enrichment.skills) : null,
     employmentType: enrichment.employmentType,
-    lastSeenAt: new Date(),
+    lastSeenAt: now,
   };
 
   // 1. Same posting from the same source (stable external id) → update in place.
@@ -236,31 +271,43 @@ async function persist(
       where: { id: existing.id },
       data: {
         ...data,
+        // Never make an unchanged requisition look newer merely because a
+        // relative source label (for example Workday's "Posted Today") moved.
+        postedAt:
+          existing.postedAt && p.postedAt
+            ? new Date(Math.min(existing.postedAt.getTime(), p.postedAt.getTime()))
+            : existing.postedAt ?? p.postedAt,
+        ...(!isSecondary
+          ? { employerPostedAt: existing.employerPostedAt ?? p.postedAt }
+          : {}),
+        ...(!isSecondary && !existing.firstPartyFirstSeenAt
+          ? { firstPartyFirstSeenAt: now }
+          : {}),
         ...verificationCache,
         ...confirmedOpenData(sourceRun, existing, applyUrl),
       },
     });
-    recordDiscoveryJobObservation(sourceRun, existing.id);
+    recordDiscoveryJobObservation(sourceRun, existing.id, p.postedAt);
     return "updated";
   }
 
-  // 2. Same role already found via a DIFFERENT source. A GitHub aggregator board
-  //    re-lists roles that also live on a company's own site (and across boards).
-  //    Board postings therefore dedupe against ANY existing card with the same
-  //    fingerprint; native company postings only dedupe across a *different*
-  //    system, so an employer's distinct same-title reqs (same system) are kept.
-  //    Company sites run before boards, so the richer native card normally wins.
-  //    Promote an older board-only row when a native source is added later.
-  if (existing?.kind === "cross-source") {
+  // 2. Same job-specific canonical URL. This is intentionally the only
+  //    cross-source merge signal: matching company/title/country is not enough
+  //    because employers often have several distinct requisitions with the same
+  //    title. When identity is uncertain we keep both rows to protect recall.
+  if (existing?.kind === "canonical-url") {
     const promoteNative =
       p.system !== "githubboard" &&
       existing.discoverySystem === "githubboard";
+    const refreshCanonicalUrlMatch =
+      !(p.system === "githubboard" && existing.discoverySystem !== "githubboard");
     await prisma.job.update({
       where: { id: existing.id },
-      data: promoteNative
+      data: promoteNative || refreshCanonicalUrlMatch
         ? {
             dedupeKey,
             ...data,
+            ...(!isSecondary ? { firstPartyFirstSeenAt: now } : {}),
             lastVerifiedAt: null,
             lastVerificationResult: null,
             ...confirmedOpenData(sourceRun, existing, applyUrl),
@@ -270,7 +317,7 @@ async function persist(
             ...confirmedOpenData(sourceRun, existing, existing.applyUrl),
           },
     });
-    recordDiscoveryJobObservation(sourceRun, existing.id);
+    recordDiscoveryJobObservation(sourceRun, existing.id, p.postedAt);
     return "updated";
   }
 
@@ -278,12 +325,13 @@ async function persist(
     data: {
       dedupeKey,
       ...data,
+      firstPartyFirstSeenAt: isSecondary ? null : now,
       availabilityStatus: JOB_AVAILABILITY.OPEN,
       consecutiveMisses: 0,
     },
     select: { id: true },
   });
-  recordDiscoveryJobObservation(sourceRun, created.id);
+  recordDiscoveryJobObservation(sourceRun, created.id, p.postedAt);
   return "created";
 }
 
@@ -297,7 +345,9 @@ async function recordExistingObservation(
   const direct = sourceRun?.descriptor.positiveEvidence !== "secondary";
   const applyUrl = normalizeUrl(p.applyUrl);
   const exactUpdate =
-    direct && existing.kind === "exact" && markNotEntryLevel
+    direct &&
+    (existing.kind === "exact" || existing.kind === "canonical-url") &&
+    markNotEntryLevel
       ? {
           title: p.title,
           company: canonicalCompanyName(p.company),
@@ -312,7 +362,7 @@ async function recordExistingObservation(
       : {};
   const verificationCache =
     direct &&
-    existing.kind === "exact" &&
+    (existing.kind === "exact" || existing.kind === "canonical-url") &&
     existing.applyUrl !== applyUrl
       ? { lastVerifiedAt: null, lastVerificationResult: null }
       : {};
@@ -325,7 +375,7 @@ async function recordExistingObservation(
       ...confirmedOpenData(sourceRun, existing, applyUrl),
     },
   });
-  recordDiscoveryJobObservation(sourceRun, existing.id);
+  recordDiscoveryJobObservation(sourceRun, existing.id, p.postedAt, false);
 }
 
 export interface IngestCounts {
@@ -469,6 +519,17 @@ async function runCompany(
       : undefined;
   try {
     const postings = await fetchCompanyPostings(c, { ...ctx, onWarning });
+    if (c.system === "githubboard") {
+      try {
+        await observeCommunityAtsBoards(postings, c.name);
+      } catch (error) {
+        onWarning(
+          `Automatic ATS expansion failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
     await ingestPostings(postings, onlyEntryLevel, res, {
       ...opts,
       sourceRun,
@@ -523,6 +584,10 @@ export async function runDiscovery(opts?: {
   onlyEntryLevel?: boolean;
   concurrency?: number;
   config?: DiscoveryConfigData;
+  /** Benchmark/internal hook: run only dynamically verified ATS boards. */
+  includeStaticSources?: boolean;
+  /** Benchmark/internal hook: validation is orchestrated as its own phase. */
+  validatePendingAts?: boolean;
   onProgress?: (r: CompanyRunResult) => void;
   onLifecycle?: (result: AvailabilityReconciliationResult) => void;
   verify?: PostingVerifier;
@@ -531,7 +596,11 @@ export async function runDiscovery(opts?: {
 }): Promise<DiscoveryRunResult> {
   const cycleStartedAt = new Date();
   const onlyEntryLevel = opts?.onlyEntryLevel ?? true;
-  const concurrency = opts?.concurrency ?? 4;
+  // Public ATS endpoints are shared infrastructure. Two concurrent company
+  // boards plus a small gap between batches keeps broad coverage gentle; a
+  // two-hour discovery interval makes the extra seconds immaterial.
+  const concurrency = opts?.concurrency ?? 2;
+  const pacingMs = process.env.NODE_ENV === "test" ? 0 : 250;
   const config = opts?.config ?? (await getDiscoveryConfig());
   const ingestOpts: IngestOptions = {
     entryOptions: toEntryLevelOptions(config),
@@ -543,9 +612,31 @@ export async function runDiscovery(opts?: {
     internshipsOnly: config.internshipsOnly,
     watchedCompanies: config.watchedCompanies,
   };
+  // Convert direct ATS links already present in community inventory into
+  // durable candidates. Boards verified before this cycle are polled now; the
+  // bounded validation batch joins the next cycle so validation never causes
+  // the same public endpoint to be fetched twice in one run.
+  await bootstrapCommunityAtsBoards();
+  const expandedCompanies = await verifiedAtsCompanies();
+  if (opts?.validatePendingAts !== false) await validatePendingAtsBoards(ctx);
   const disabled = new Set(config.disabledSources.map((s) => s.toLowerCase()));
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
-  const targets = DISCOVERY_SOURCES.filter((c) => {
+  const staticBoardIds = new Set(
+    DISCOVERY_SOURCES.flatMap((source) => {
+      const key = atsCompanyBoardKey(source);
+      return key ? [key] : [];
+    }),
+  );
+  const allSources = [
+    ...(opts?.includeStaticSources === false ? [] : DISCOVERY_SOURCES),
+    ...expandedCompanies.filter(
+      (source) => {
+        const key = atsCompanyBoardKey(source);
+        return !key || !staticBoardIds.has(key);
+      },
+    ),
+  ];
+  const targets = allSources.filter((c) => {
     if (disabled.has(c.name.toLowerCase())) return false;
     if (c.system === "watchlist" && config.watchedCompanies.length === 0) return false;
     if (wanted) return wanted.includes(c.name.toLowerCase());
@@ -579,12 +670,19 @@ export async function runDiscovery(opts?: {
       results.push(r);
       opts?.onProgress?.(r);
     }
+    if (pacingMs > 0 && i + concurrency < companies.length) {
+      await politePause(pacingMs);
+    }
   }
 
-  for (const a of aggregators) {
+  for (let index = 0; index < aggregators.length; index++) {
+    const a = aggregators[index];
     const r = await runCompany(a, onlyEntryLevel, ingestOpts, ctx);
     results.push(r);
     opts?.onProgress?.(r);
+    if (pacingMs > 0 && index + 1 < aggregators.length) {
+      await politePause(pacingMs);
+    }
   }
 
   const lifecycle =

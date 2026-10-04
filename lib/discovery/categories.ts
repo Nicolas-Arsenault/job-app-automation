@@ -45,7 +45,7 @@ const BIGTECH = new Set(
     "Robinhood", "Dropbox", "Pinterest", "Cloudflare", "Lyft", "Airbnb",
     "Roblox", "HubSpot", "Datadog", "Waymo", "Apple", "Tesla", "Google",
     "Shopify", "Meta", "LinkedIn", "Rivian", "Cisco",
-    "Ubisoft", "Bosch", "Visa",
+    "Ubisoft", "Bosch", "Visa", "Reddit", "Block", "DoorDash Canada",
   ].map(norm),
 );
 
@@ -54,7 +54,16 @@ const BIGTECH = new Set(
 const MIDTECH = new Set(
   [
     "Coveo", "Ciena", "Kinaxis", "Autodesk", "Nokia", "Ericsson", "Clio",
-    "BlackBerry",
+    "BlackBerry", "MongoDB", "Twilio", "GitLab", "Elastic", "Okta",
+    "Samsara", "Toast", "Brex", "Asana", "Squarespace", "Duolingo",
+    "Instacart", "Affirm", "Coursera", "Rubrik", "Gusto", "Flexport",
+    "StackAdapt", "TouchBistro", "Thinkific", "Verkada", "SoFi", "Chime",
+    "Roku", "Grafana Labs", "CircleCI", "Cockroach Labs", "PagerDuty",
+    "New Relic", "Webflow", "Box", "Klaviyo", "D2L", "Wattpad", "Waabi",
+    "Jobber", "Geotab Internships", "Visier", "Astera Labs Early Career",
+    "Trulioo Co-op & Internships", "Rivian and Volkswagen Group Technologies",
+    "nCino Early Talent", "Superhuman",
+    "RBC", "TD", "BMO", "CIBC", "Manulife", "CPP Investments", "EQ Bank",
   ].map(norm),
 );
 
@@ -65,7 +74,7 @@ const AI = new Set(
     "Scale AI", "OpenAI", "Cohere", "ElevenLabs", "Baseten", "Cursor",
     "Cursor (Anysphere)", "Cognition",
     "Lovable", "Granola", "Mercor", "Sierra", "Harvey", "DeepMind", "Mistral",
-    "Ada",
+    "Ada", "Tenstorrent University", "CTGT",
     // Well-known AI labs / applied-AI companies (many surface via YC + boards).
     "Perplexity", "Perplexity AI", "Hugging Face", "Runway", "Runway ML",
     "Character AI", "Character.AI", "Glean", "Writer", "Adept", "Inflection",
@@ -117,6 +126,7 @@ const STARTUP = new Set(
     "Ramp", "Wealthsimple", "Vercel", "Replit", "Zipline",
     "Behaviour Interactive", "TrackTik", "AlayaCare", "League", "Hootsuite",
     "Clearco", "1Password", "Hopper", "Genetec", "Nuvei", "Vention",
+    "Dandy", "Circleback", "Perchwell", "Grow Therapy",
   ].map(norm),
 );
 

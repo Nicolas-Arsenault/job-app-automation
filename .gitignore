@@ -52,6 +52,9 @@ next-env.d.ts
 /prisma/*.db-journal
 /dev.db
 /dev.db-journal
+/e2e.db
+/e2e.db-journal
+/backups/
 
 # agent resume-match scratch files
 /.match/

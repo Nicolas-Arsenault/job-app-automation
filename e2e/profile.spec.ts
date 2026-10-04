@@ -55,12 +55,14 @@ test.describe("profile page", () => {
     ).toBeVisible();
     for (const label of [
       "First name",
+      "Full legal name in native language",
       "Email",
       "Exact graduation date",
       "Education start date",
       "Software engineering industry experience",
       "Undergraduate GPA",
       "SAT score",
+      "Available start date",
       "Add previous employer",
       "Target total annual compensation",
       "Are you Hispanic or Latino?",
@@ -298,9 +300,15 @@ test.describe("profile page", () => {
     });
     await expect(applicationAutofill).toBeVisible();
     await expect(page.getByLabel("First name")).toBeVisible();
+    await expect(
+      page.getByLabel("Full legal name in native language"),
+    ).toBeVisible();
     await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("X / Twitter profile URL")).toBeVisible();
+    await expect(page.getByLabel("Google Scholar URL")).toBeVisible();
     await expect(applicationAutofill.getByLabel("Phone extension")).toBeVisible();
     await expect(page.getByLabel("Current or last employer")).toBeVisible();
+    await expect(page.getByLabel("Available start date")).toBeVisible();
     await expect(page.getByLabel("Address line 1")).toBeVisible();
     const usSection = page.getByRole("region", {
       name: "Jobs in the United States",

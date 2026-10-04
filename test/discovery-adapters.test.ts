@@ -526,6 +526,68 @@ describe("github board adapter (aggregator listings.json)", () => {
       },
     ]);
   });
+
+  it("parses status-less Markdown boards and nested apply badges", async () => {
+    const markdown = `
+| Company | Role | Location | Apply | Date Posted |
+| --- | --- | --- | --- | --- |
+| Acme | Software Engineer Intern | Ottawa, ON | [![Apply](https://img.shields.io/badge/apply-blue)](https://jobs.example.com/jobs/12345?utm_source=board) | Oct 2, 2026 |
+`;
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(markdown)));
+    const board: ApiCompany = {
+      name: "Status-less Markdown fixture",
+      method: "api",
+      system: "githubboard",
+      countryFilter: "post",
+      queryTerms: ["software"],
+      board: {
+        owner: "fixture",
+        repo: "internships",
+        ref: "main",
+        path: "README.md",
+        format: "markdown",
+      },
+    };
+
+    const posts = await fetchCompanyPostings(board);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      company: "Acme",
+      country: "CA",
+      applyUrl: "https://jobs.example.com/jobs/12345?utm_source=board",
+    });
+    expect(posts[0].postedAt?.toISOString()).toBe("2026-10-02T00:00:00.000Z");
+  });
+
+  it("parses public internship CSV feeds", async () => {
+    const csv = `id,company,title,location,sponsorship,posted_at,url\n"job:1",Acme,"Software Engineer Intern","Toronto, Ontario, Canada",unknown,2026-10-02T12:00:00Z,https://jobs.example.com/jobs/12345\n`;
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(csv)));
+    const board: ApiCompany = {
+      name: "CSV fixture",
+      method: "api",
+      system: "githubboard",
+      countryFilter: "post",
+      queryTerms: ["software"],
+      board: {
+        owner: "fixture",
+        repo: "internships",
+        ref: "main",
+        path: "internships.csv",
+        format: "csv",
+      },
+    };
+
+    const posts = await fetchCompanyPostings(board);
+    expect(posts).toMatchObject([
+      {
+        company: "Acme",
+        title: "Software Engineer Intern",
+        country: "CA",
+        externalId: "job:1",
+        sponsorship: "unknown",
+      },
+    ]);
+  });
 });
 
 describe("SmartRecruiters adapter", () => {
@@ -1261,6 +1323,11 @@ describe("discovery catalog", () => {
     expect(bySystem("Ericsson")).toBe("eightfold");
     expect(bySystem("Clio")).toBe("workday");
     expect(bySystem("BlackBerry")).toBe("workday");
+    expect(bySystem("MongoDB")).toBe("greenhouse");
+    expect(bySystem("Reddit")).toBe("greenhouse");
+    expect(bySystem("Palantir")).toBe("lever");
+    expect(bySystem("D2L")).toBe("lever");
+    expect(bySystem("Jobber")).toBe("ashby");
   });
 
   it("registers the quant / trading firms with the expected system", () => {
@@ -1286,7 +1353,7 @@ describe("discovery catalog", () => {
   });
 
   it("registers the GitHub board sources with a repo config", () => {
-    expect(BOARD_SOURCES).toHaveLength(3);
+    expect(BOARD_SOURCES).toHaveLength(10);
     for (const b of BOARD_SOURCES) {
       expect(b.system).toBe("githubboard");
       expect(b.board?.owner).toBeTruthy();
@@ -1297,8 +1364,17 @@ describe("discovery catalog", () => {
       "Summer2027-Internships",
       "canada-tech-internships-summer-2027",
       "Summer2027-Internships",
+      "Canadian-Tech-Internships-2027",
+      "Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships",
+      "2027-tech-jobs",
+      "2027-tech-jobs",
+      "2027-SWE-College-Jobs",
+      "summer-2027-internships",
+      "Ricsign-New-Grads-Jobs-2027",
     ]);
-    expect(BOARD_SOURCES.some((source) => /new-?grad/i.test(source.board?.repo ?? ""))).toBe(false);
+    // Mixed repositories are acceptable when the registered feed is explicitly
+    // internship-focused; ingestion filters out any non-internship rows.
+    expect(BOARD_SOURCES.some((source) => /new-?grad/i.test(source.name))).toBe(false);
   });
 
   it("registers the Y Combinator expansion source with a directory URL", () => {

@@ -7,7 +7,7 @@ test.describe("job card enrichment + applied tracking", () => {
 
     const card = jobCard(page, "E2E Frontend Engineer");
     await expect(card).toBeVisible();
-    await expect(card.getByLabel("Judge score 88 out of 100")).toBeVisible();
+    await expect(card.getByLabel("Résumé fit 88 out of 100")).toBeVisible();
     await expect(card).toHaveClass(/border-emerald-300/);
     await expect(card.getByRole("heading", { name: "Why it fits" })).toBeVisible();
     await expect(card.getByRole("heading", { name: "Gaps" })).toBeVisible();
@@ -73,7 +73,7 @@ test.describe("job card enrichment + applied tracking", () => {
     await expect(jobCard(page, "E2E Apply Engineer")).toBeVisible();
 
     // Require fit >= 70: the 64-fit Apply role drops, the 88-fit Frontend stays.
-    await page.locator('label:has-text("Min fit")').locator("select").selectOption("70");
+    await page.getByLabel("Min résumé fit").selectOption("70");
 
     await expect(jobCard(page, "E2E Frontend Engineer")).toBeVisible();
     await expect(jobCard(page, "E2E Apply Engineer")).toHaveCount(0);
