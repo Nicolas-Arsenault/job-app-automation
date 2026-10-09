@@ -109,7 +109,9 @@ If a direct source sees the same requisition again, that row reopens instead of 
   of employers. See [Discovery pipeline](#discovery-pipeline).
 - **Two separate queues** — US and Canada, newest-first, with last-24h / 7d / 30d filters.
 - **Rate-safe dashboard refreshes** — the shared scrape control enforces a durable two-hour
-  cooldown and shows a live countdown before the next run can start.
+  cooldown and shows a live countdown before the next run can start. Normal refreshes use bounded
+  worker pools (8 API boards, 4 browser boards, and 2 detail pages per browser board by default),
+  while admission/validation remains sequential. The ceilings are intentionally capped in code.
 - **Two-hour scheduled discovery** — `npm run cron` runs the same active discovery,
   reconciliation and Judge pipeline at minute 17 every two hours, skips overlapping cycles, and
   does not consume the manual refresh cooldown. Startup scans are disabled by default so worker
@@ -583,6 +585,11 @@ npm run discord:test  # sends one safe connectivity message when DISCORD_WEBHOOK
 
 The cron process only **discovers and scores** jobs — it never submits. Submission
 always stays behind the dashboard's human gate.
+
+For local/VPS tuning, `DISCOVERY_API_CONCURRENCY` (1–16),
+`DISCOVERY_BROWSER_CONCURRENCY` (1–6), and
+`DISCOVERY_BROWSER_DETAIL_CONCURRENCY` (1–3) control the bounded pools. The defaults are
+8/4/2; lower them if the host is memory-constrained or a vendor starts throttling.
 
 ## Legacy live-submission scaffolding (paused)
 

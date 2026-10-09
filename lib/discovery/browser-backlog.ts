@@ -4,6 +4,7 @@ import { classifyCountry, isSoftwareRole } from "./entryLevel";
 import type { DiscoveryPosting } from "./adapters";
 import type { BrowserCompany } from "./companies";
 import type { BrowserScrapeResult } from "./browser";
+import { mapPool } from "./yc";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -314,19 +315,36 @@ async function hydrate(
 export async function scrapeBrowserBacklogCompanies(
   targets: BrowserBacklogTarget[],
   onResult?: (result: BrowserScrapeResult) => void,
+  options: {
+    concurrency?: number;
+    detailConcurrency?: number;
+    validationMode?: boolean;
+  } = {},
 ): Promise<BrowserScrapeResult[]> {
   if (!targets.length) return [];
+  const configuredConcurrency =
+    options.concurrency ?? Number(process.env.DISCOVERY_BROWSER_CONCURRENCY || 4);
+  const concurrency = Math.min(
+    6,
+    Math.max(1, Math.floor(configuredConcurrency || 4)),
+  );
+  const configuredDetailConcurrency =
+    options.detailConcurrency ??
+    Number(process.env.DISCOVERY_BROWSER_DETAIL_CONCURRENCY || 2);
+  const detailConcurrency = Math.min(
+    3,
+    Math.max(1, Math.floor(configuredDetailConcurrency || 2)),
+  );
   const browser = await chromium.launch({ headless: true });
-  const results: BrowserScrapeResult[] = [];
   try {
-    for (const target of targets) {
+    return await mapPool(targets, concurrency, async (target) => {
       const context = await browser.newContext({ userAgent: UA, locale: "en-US" });
-      const page = await context.newPage();
-      await page.route("**/*", (route) =>
+      await context.route("**/*", (route) =>
         ["image", "media", "font"].includes(route.request().resourceType())
           ? route.abort()
           : route.continue(),
       );
+      const page = await context.newPage();
       const result: BrowserScrapeResult = {
         company: target.company.name,
         system: "browserats",
@@ -339,8 +357,15 @@ export async function scrapeBrowserBacklogCompanies(
         const links = (await boardLinks(page, target)).filter(
           (link) => /\b(intern|co-?op|student)\b/i.test(link.title) && isSoftwareRole(link.title),
         ).slice(0, 20);
-        for (const link of links) {
-          const posting = await hydrate(page, target.company.name, link);
+        const postings = await mapPool(links, detailConcurrency, async (link) => {
+          const detailPage = await context.newPage();
+          try {
+            return await hydrate(detailPage, target.company.name, link);
+          } finally {
+            await detailPage.close();
+          }
+        });
+        for (const posting of postings) {
           result.postings.push(posting);
           if (posting.country === "US") result.usFound++;
           if (posting.country === "CA") result.caFound++;
@@ -351,21 +376,22 @@ export async function scrapeBrowserBacklogCompanies(
         });
       } catch (error) {
         result.error = error instanceof Error ? error.message : String(error);
-        await prisma.communityEmployerCandidate.update({
-          where: { companyKey: target.companyKey },
-          data: {
-            status: "browser_blocked",
-            notes: `Playwright validation failed (${target.family}): ${result.error.slice(0, 350)}`,
-          },
-        });
+        if (options.validationMode) {
+          await prisma.communityEmployerCandidate.update({
+            where: { companyKey: target.companyKey },
+            data: {
+              status: "browser_blocked",
+              notes: `Playwright validation failed (${target.family}): ${result.error.slice(0, 350)}`,
+            },
+          });
+        }
       } finally {
         await context.close();
       }
-      results.push(result);
       onResult?.(result);
-    }
+      return result;
+    });
   } finally {
     await browser.close();
   }
-  return results;
 }

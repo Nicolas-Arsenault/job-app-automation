@@ -7,6 +7,7 @@ import {
   type BrowserSystem,
 } from "./companies";
 import type { DiscoveryPosting } from "./adapters";
+import { mapPool } from "./yc";
 
 // Playwright-based scraper for the client-rendered / bot-gated career sites that
 // have no usable public JSON API (see BROWSER_COMPANIES). It is intentionally
@@ -431,6 +432,7 @@ export async function scrapeBrowserCompany(
 // caller ingests them (classify + persist) via ingestPostings in run.ts.
 export async function scrapeBrowserCompanies(opts?: {
   companies?: string[];
+  concurrency?: number;
   onResult?: (r: BrowserScrapeResult) => void;
 }): Promise<BrowserScrapeResult[]> {
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
@@ -439,15 +441,16 @@ export async function scrapeBrowserCompanies(opts?: {
     : BROWSER_COMPANIES;
 
   const browser = await chromium.launch({ headless: true });
-  const results: BrowserScrapeResult[] = [];
   try {
-    for (const c of targets) {
+    const configured =
+      opts?.concurrency ?? Number(process.env.DISCOVERY_BROWSER_CONCURRENCY || 4);
+    const concurrency = Math.min(6, Math.max(1, Math.floor(configured || 4)));
+    return await mapPool(targets, concurrency, async (c) => {
       const r = await scrapeBrowserCompany(c, browser);
-      results.push(r);
       opts?.onResult?.(r);
-    }
+      return r;
+    });
   } finally {
     await browser.close();
   }
-  return results;
 }

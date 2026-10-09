@@ -307,11 +307,19 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
       !disabled.has(company.name.toLowerCase()) &&
       isCompanyFocused(company.name, config.companyFocus),
   );
-  const backlogTargets = (await browserBacklogTargets()).filter(
+  const readyBacklogTargets = (await browserBacklogTargets(["browser_ready"])).filter(
     (target) =>
       !disabled.has(target.company.name.toLowerCase()) &&
       isCompanyFocused(target.company.name, config.companyFocus),
   );
+  const pendingBacklogTargets = (await browserBacklogTargets(["needs_adapter"]))
+    .filter(
+      (target) =>
+        !disabled.has(target.company.name.toLowerCase()) &&
+        isCompanyFocused(target.company.name, config.companyFocus),
+    )
+    .slice(0, 2);
+  const backlogTargets = [...readyBacklogTargets, ...pendingBacklogTargets];
   const allBrowserCompanies = [
     ...supportedBrowserCompanies,
     ...backlogTargets.map((target) => target.company),
@@ -380,10 +388,21 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
         onResult: onBrowserResult,
       })
     : [];
-  const backlogScraped = backlogTargets.length
-    ? await scrapeBrowserBacklogCompanies(backlogTargets, onBrowserResult)
+  const readyBacklogScraped = readyBacklogTargets.length
+    ? await scrapeBrowserBacklogCompanies(readyBacklogTargets, onBrowserResult)
     : [];
-  const scraped = [...staticScraped, ...backlogScraped];
+  const pendingBacklogScraped = pendingBacklogTargets.length
+    ? await scrapeBrowserBacklogCompanies(
+        pendingBacklogTargets,
+        onBrowserResult,
+        { concurrency: 1, detailConcurrency: 1, validationMode: true },
+      )
+    : [];
+  const scraped = [
+    ...staticScraped,
+    ...readyBacklogScraped,
+    ...pendingBacklogScraped,
+  ];
   const browser: BrowserRefreshResult[] = [];
   for (const result of scraped) {
     const counts = zeroCounts();

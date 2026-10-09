@@ -38,6 +38,7 @@ import {
   type DiscoverySourceRunContext,
   type PostingVerifier,
 } from "./lifecycle";
+import { mapPool } from "./yc";
 
 // The discovery runner: fetch each API company's public endpoint, keep only
 // US / Canada entry-level software roles, and upsert them into the Job table
@@ -600,11 +601,16 @@ export async function runDiscovery(opts?: {
 }): Promise<DiscoveryRunResult> {
   const cycleStartedAt = new Date();
   const onlyEntryLevel = opts?.onlyEntryLevel ?? true;
-  // Public ATS endpoints are shared infrastructure. Two concurrent company
-  // boards plus a small gap between batches keeps broad coverage gentle; a
-  // two-hour discovery interval makes the extra seconds immaterial.
-  const concurrency = opts?.concurrency ?? 2;
-  const pacingMs = process.env.NODE_ENV === "test" ? 0 : 250;
+  // Keep enough independent boards in flight to make broad discovery practical
+  // while retaining a hard ceiling. Individual adapters still apply their own
+  // low detail-page limits, retries and cache policy.
+  const configuredConcurrency =
+    opts?.concurrency ?? Number(process.env.DISCOVERY_API_CONCURRENCY || 8);
+  const concurrency = Math.min(
+    16,
+    Math.max(1, Math.floor(configuredConcurrency || 8)),
+  );
+  const pacingMs = process.env.NODE_ENV === "test" ? 0 : 150;
   const config = opts?.config ?? (await getDiscoveryConfig());
   const ingestOpts: IngestOptions = {
     entryOptions: toEntryLevelOptions(config),
@@ -659,7 +665,7 @@ export async function runDiscovery(opts?: {
   );
 
   const results: CompanyRunResult[] = [];
-  // Named company sites first (concurrent batches), then the aggregator sources
+  // Named company sites first (bounded worker pool), then the aggregator sources
   // strictly sequentially: the YC expansion (native company boards) before the
   // GitHub boards. Aggregators re-list roles already found natively, so running
   // them last + one-at-a-time makes cross-source dedup deterministic (each sees
@@ -669,18 +675,16 @@ export async function runDiscovery(opts?: {
     .filter(isAggregator)
     .sort((a, b) => AGGREGATORS.indexOf(a.system as never) - AGGREGATORS.indexOf(b.system as never));
 
-  for (let i = 0; i < companies.length; i += concurrency) {
-    const batch = companies.slice(i, i + concurrency);
-    const batchResults = await Promise.all(
-      batch.map((c) => runCompany(c, onlyEntryLevel, ingestOpts, ctx)),
-    );
-    for (const r of batchResults) {
-      results.push(r);
-      opts?.onProgress?.(r);
-    }
-    if (pacingMs > 0 && i + concurrency < companies.length) {
-      await politePause(pacingMs);
-    }
+  const companyResults = await mapPool(companies, concurrency, async (company) => {
+    const result = await runCompany(company, onlyEntryLevel, ingestOpts, ctx);
+    // Pace each worker rather than pausing the entire pool behind its slowest
+    // member. This keeps the pool utilized without producing tight request loops.
+    if (pacingMs > 0) await politePause(pacingMs);
+    opts?.onProgress?.(result);
+    return result;
+  });
+  for (const result of companyResults) {
+    results.push(result);
   }
 
   for (let index = 0; index < aggregators.length; index++) {
