@@ -57,7 +57,8 @@ export type BrowserSystem =
   | "shopify"
   | "meta"
   | "linkedin"
-  | "mistral";
+  | "mistral"
+  | "browserats";
 
 // Browser systems that currently have a verified, clean Playwright extractor
 // (lib/discovery/browser.ts). The rest render an entire card inside one anchor,
@@ -72,6 +73,8 @@ export interface ApiCompany {
   name: string;
   method: "api";
   system: DiscoverySystem;
+  /** Internal queue probe: fetch the minimum data needed to validate a board. */
+  validationOnly?: boolean;
   // Identifier the system needs: ATS board token, Workday tenant, etc.
   token?: string;
   // Workday-specific host + site path.

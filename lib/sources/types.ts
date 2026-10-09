@@ -9,6 +9,7 @@ export type AtsType =
   | "workable"
   | "teamtailor"
   | "smartrecruiters"
+  | "oracle"
   | "unknown";
 
 export type SourceKind =

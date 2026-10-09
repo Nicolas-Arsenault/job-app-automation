@@ -16,6 +16,10 @@ import {
   type BrowserScrapeResult,
 } from "./browser";
 import {
+  browserBacklogTargets,
+  scrapeBrowserBacklogCompanies,
+} from "./browser-backlog";
+import {
   ingestSourcePostings,
   runDiscovery,
   type DiscoveryRunResult,
@@ -303,7 +307,16 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
       !disabled.has(company.name.toLowerCase()) &&
       isCompanyFocused(company.name, config.companyFocus),
   );
-  const totalSources = apiSourceCount + supportedBrowserCompanies.length;
+  const backlogTargets = (await browserBacklogTargets()).filter(
+    (target) =>
+      !disabled.has(target.company.name.toLowerCase()) &&
+      isCompanyFocused(target.company.name, config.companyFocus),
+  );
+  const allBrowserCompanies = [
+    ...supportedBrowserCompanies,
+    ...backlogTargets.map((target) => target.company),
+  ];
+  const totalSources = apiSourceCount + allBrowserCompanies.length;
   const totalSteps = totalSources + 2;
   let completedSources = 0;
   const sourceOutcomes = countDiscoverySourceOutcomes([]);
@@ -330,48 +343,51 @@ async function executeRefresh(started: number): Promise<DiscoveryRefreshResult> 
     },
   });
 
-  if (supportedBrowserCompanies.length) {
+  if (allBrowserCompanies.length) {
     updateProgress({
       phase: "browser",
       currentSource: null,
-      message: `Running ${supportedBrowserCompanies.length} browser sources…`,
+      message: `Running ${allBrowserCompanies.length} browser sources…`,
     });
   }
-  const scraped = supportedBrowserCompanies.length
+  const onBrowserResult = (result: BrowserScrapeResult) => {
+    completedSources++;
+    const company = allBrowserCompanies.find(
+      (candidate) => candidate.name === result.company,
+    );
+    if (!company) throw new Error(`Unknown browser source result: ${result.company}`);
+    const descriptor = describeBrowserSource(company);
+    const classified = classifyDiscoverySourceOutcome({
+      authoritative: descriptor.authoritative,
+      expectedComplete: descriptor.expectedComplete,
+      ...(result.error ? { error: result.error } : {}),
+      ...(result.warning ? { warning: result.warning } : {}),
+    });
+    sourceOutcomes[classified.outcome]++;
+    updateProgress({
+      completedSources,
+      completedSteps: completedSources,
+      currentSource: result.company,
+      outcomes: { ...sourceOutcomes },
+      message:
+        `Browser sources ${completedSources - apiSourceCount}/` +
+        `${allBrowserCompanies.length} · ${result.company}`,
+    });
+  };
+  const staticScraped = supportedBrowserCompanies.length
     ? await scrapeBrowserCompanies({
         companies: supportedBrowserCompanies.map((company) => company.name),
-        onResult: (result) => {
-          completedSources++;
-          const company = supportedBrowserCompanies.find(
-            (candidate) => candidate.name === result.company,
-          );
-          if (!company) {
-            throw new Error(`Unknown browser source result: ${result.company}`);
-          }
-          const descriptor = describeBrowserSource(company);
-          const classified = classifyDiscoverySourceOutcome({
-            authoritative: descriptor.authoritative,
-            expectedComplete: descriptor.expectedComplete,
-            ...(result.error ? { error: result.error } : {}),
-            ...(result.warning ? { warning: result.warning } : {}),
-          });
-          sourceOutcomes[classified.outcome]++;
-          updateProgress({
-            completedSources,
-            completedSteps: completedSources,
-            currentSource: result.company,
-            outcomes: { ...sourceOutcomes },
-            message:
-              `Browser sources ${completedSources - apiSourceCount}/` +
-              `${supportedBrowserCompanies.length} · ${result.company}`,
-          });
-        },
+        onResult: onBrowserResult,
       })
     : [];
+  const backlogScraped = backlogTargets.length
+    ? await scrapeBrowserBacklogCompanies(backlogTargets, onBrowserResult)
+    : [];
+  const scraped = [...staticScraped, ...backlogScraped];
   const browser: BrowserRefreshResult[] = [];
   for (const result of scraped) {
     const counts = zeroCounts();
-    const company = supportedBrowserCompanies.find(
+    const company = allBrowserCompanies.find(
       (candidate) => candidate.name === result.company,
     );
     if (!company) {

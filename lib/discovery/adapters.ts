@@ -931,7 +931,7 @@ async function oracle(
   const rows = new Map<string, OracleRow>();
 
   for (const term of searchTerms(c, ctx)) {
-    for (let offset = 0; offset < 500; offset += 100) {
+    for (let offset = 0; offset < (c.validationOnly ? 100 : 500); offset += 100) {
       const finder =
         `siteNumber=${config.site},limit=100,offset=${offset},` +
         `sortBy=POSTING_DATES_DESC,keyword=${encodeURIComponent(term)}`;
@@ -983,7 +983,11 @@ async function oracle(
         postedAt: toDate(row.PostedDate),
       });
 
-    if (!isSoftwareRole(row.Title ?? "") || !["US", "CA"].includes(classifyCountry(location))) {
+    if (
+      c.validationOnly ||
+      !isSoftwareRole(row.Title ?? "") ||
+      !["US", "CA"].includes(classifyCountry(location))
+    ) {
       return fallback();
     }
     try {
@@ -1046,7 +1050,7 @@ async function workday(
     ? (w.searchTerms ?? INTERNSHIP_SEARCH_TERMS)
     : configuredSearches;
   for (const searchText of searches) {
-    for (let offset = 0; offset < 100; offset += 20) {
+    for (let offset = 0; offset < (c.validationOnly ? 20 : 100); offset += 20) {
       const data = (await fetchJson(`https://${w.host}/wday/cxs/${w.tenant}/${w.site}/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1367,6 +1371,24 @@ async function smartrecruiters(
   const candidates = [...rows.values()].filter((row) =>
     isSoftwareRole(row.name ?? ""),
   );
+  if (c.validationOnly) {
+    return candidates.map((row) => {
+      const location =
+        row.location?.fullLocation ??
+        [row.location?.city, row.location?.region, row.location?.country]
+          .filter(Boolean)
+          .join(", ");
+      return mk("smartrecruiters", c.name, {
+        title: row.name ?? "",
+        location,
+        applyUrl:
+          `https://jobs.smartrecruiters.com/${encodeURIComponent(companyIdentifier)}/${row.id}`,
+        externalId: row.id ?? "",
+        description: "",
+        postedAt: toDate(row.releasedDate),
+      });
+    });
+  }
   return (
     await mapPool(candidates, 2, async (row): Promise<DiscoveryPosting | null> => {
       const id = row.id ?? "";

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../lib/db";
 import {
   atsBoardFromUrl,
+  bootstrapCommunityAtsBoards,
   observeCommunityAtsBoards,
   validatePendingAtsBoards,
   verifiedAtsCompanies,
@@ -65,6 +66,17 @@ describe("automatic ATS expansion", () => {
     expect(
       atsBoardFromUrl("https://jobs.eu.lever.co/acme/12345678-1234-1234-1234-1234567890ab"),
     ).toEqual({ system: "lever", token: "acme" });
+  });
+
+  it("extracts Oracle Recruiting Candidate Experience board identities", () => {
+    expect(
+      atsBoardFromUrl(
+        "https://hdks.fa.ca2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/9341",
+      ),
+    ).toEqual({
+      system: "oracle",
+      token: "hdks.fa.ca2.oraclecloud.com|hdks.fa.ca2.oraclecloud.com|CX_1",
+    });
   });
 
   it("recovers Greenhouse boards from official embed URLs", () => {
@@ -201,6 +213,105 @@ describe("automatic ATS expansion", () => {
         system: "workday",
         workday: expect.objectContaining({ site: "Careers" }),
       }),
+    ]);
+  });
+
+  it("turns discovered Oracle configuration into a pollable source", async () => {
+    await observeCommunityAtsBoards(
+      [
+        posting(
+          "https://hdks.fa.ca2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/9341",
+          "Definity Financial",
+        ),
+      ],
+      "Community A",
+    );
+    await validatePendingAtsBoards(
+      { internshipsOnly: true, countries: ["US", "CA"] },
+      {
+        concurrency: 1,
+        validate: async (company) => {
+          expect(company).toMatchObject({
+            name: "Definity Financial",
+            system: "oracle",
+            oracle: {
+              host: "hdks.fa.ca2.oraclecloud.com",
+              careerHost: "hdks.fa.ca2.oraclecloud.com",
+              site: "CX_1",
+            },
+          });
+          return [];
+        },
+      },
+    );
+    expect(await verifiedAtsCompanies()).toEqual([
+      expect.objectContaining({
+        system: "oracle",
+        oracle: expect.objectContaining({ site: "CX_1" }),
+      }),
+    ]);
+  });
+
+  it("removes built-in automated employers from the custom-adapter backlog", async () => {
+    await observeCommunityAtsBoards(
+      [
+        posting(
+          "https://boards.greenhouse.io/embed/job_app?token=8175471",
+          "Stripe",
+        ),
+      ],
+      "Community A",
+    );
+    expect(await prisma.communityEmployerCandidate.findFirstOrThrow()).toMatchObject({
+      status: "needs_adapter",
+    });
+
+    await bootstrapCommunityAtsBoards(0);
+    expect(await prisma.communityEmployerCandidate.findFirstOrThrow()).toMatchObject({
+      status: "resolved",
+      notes: "Already covered by the built-in automated source catalog",
+    });
+  });
+
+  it("reconciles stale backlog rows already covered by verified ATS and community sources", async () => {
+    await prisma.communityEmployerCandidate.createMany({
+      data: [
+        {
+          companyKey: "d1060a0ab234c8d3d4c5a2c2b39380f2c53e2727",
+          company: "Verified Example",
+          applicationHost: "careers.example.com",
+          exampleApplyUrl: "https://careers.example.com/jobs/1",
+        },
+        {
+          companyKey: "yc-example",
+          company: "YC Example",
+          applicationHost: "www.workatastartup.com",
+          exampleApplyUrl: "https://www.workatastartup.com/jobs/123",
+        },
+      ],
+    });
+    await prisma.discoveredAtsBoard.create({
+      data: {
+        system: "greenhouse",
+        token: "verified-example",
+        company: "Verified Example",
+        companyAliases: JSON.stringify(["Verified Example"]),
+        evidenceUrl: "https://job-boards.greenhouse.io/verified-example/jobs/1",
+        evidenceSource: "test",
+        status: "verified",
+      },
+    });
+
+    await bootstrapCommunityAtsBoards(0);
+
+    expect(
+      await prisma.communityEmployerCandidate.findMany({
+        orderBy: { company: "asc" },
+        select: { company: true, status: true },
+      }),
+    ).toEqual([
+      { company: "Verified Example", status: "resolved" },
+      { company: "YC Example", status: "resolved" },
     ]);
   });
 
