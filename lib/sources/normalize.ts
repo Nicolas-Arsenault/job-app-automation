@@ -22,6 +22,7 @@ export function detectAts(url: string): AtsType {
   if (host.includes("workable.com")) return "workable";
   if (host.includes("teamtailor.com")) return "teamtailor";
   if (host.includes("smartrecruiters.com")) return "smartrecruiters";
+  if (host === "workforcenow.adp.com") return "adp";
   if (host.endsWith(".oraclecloud.com") && url.toLowerCase().includes("candidateexperience")) {
     return "oracle";
   }
@@ -172,6 +173,14 @@ export function extractExternalId(
   applyUrl: string,
   provided?: string | null,
 ): string | null {
+  if (atsType === "adp") {
+    try {
+      const id = new URL(applyUrl).searchParams.get("jobId");
+      if (id && /^\d+$/.test(id)) return id;
+    } catch {
+      // Fall through to a source-provided ID when the URL is malformed.
+    }
+  }
   if (atsType === "icims") {
     try {
       const match = new URL(applyUrl).pathname.match(/\/jobs\/(\d+)\b/i);

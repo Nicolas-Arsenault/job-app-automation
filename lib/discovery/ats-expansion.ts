@@ -18,6 +18,8 @@ export type ExpandableAtsSystem =
   | ResolvedSystem
   | "workable"
   | "teamtailor"
+  | "phenom"
+  | "adp"
   | "workday"
   | "oracle";
 
@@ -112,6 +114,9 @@ export function atsBoardFromUrl(value: string): AtsBoardIdentity | null {
   } else if (/^[a-z0-9-]+\.teamtailor\.com$/i.test(host)) {
     system = "teamtailor";
     rawToken = host.split(".")[0];
+  } else if (host === "workforcenow.adp.com") {
+    system = "adp";
+    rawToken = url.searchParams.get("cid") ?? undefined;
   } else {
     const workday = workdayBoardFromUrl(url);
     if (workday) {
@@ -175,6 +180,18 @@ export function greenhouseBoardFromHtml(html: string): AtsBoardIdentity | null {
   return null;
 }
 
+export function greenhouseBoardFromNetworkUrls(
+  urls: Iterable<string>,
+): AtsBoardIdentity | null {
+  for (const value of urls) {
+    const fromUrl = atsBoardFromUrl(value);
+    if (fromUrl?.system === "greenhouse") return fromUrl;
+    const fromHtml = greenhouseBoardFromHtml(value);
+    if (fromHtml) return fromHtml;
+  }
+  return null;
+}
+
 async function fetchBrandedCareerPage(value: string): Promise<string | null> {
   try {
     const response = await fetch(value, {
@@ -215,6 +232,7 @@ export async function resolveBrandedGreenhouseBacklog(
     pauseMs?: number;
     fetchPage?: (url: string) => Promise<string | null>;
     validateBoard?: (board: AtsBoardIdentity) => Promise<boolean>;
+    discoverBoard?: (url: string) => Promise<AtsBoardIdentity | null>;
     unresolvedNote?: string;
     retryAttempted?: boolean;
   } = {},
@@ -240,7 +258,10 @@ export async function resolveBrandedGreenhouseBacklog(
   for (let index = 0; index < selected.length; index++) {
     const row = selected[index];
     const html = await fetchPage(row.exampleApplyUrl);
-    const extractedBoard = html ? greenhouseBoardFromHtml(html) : null;
+    const extractedBoard = (html ? greenhouseBoardFromHtml(html) : null) ??
+      (options.discoverBoard
+        ? await options.discoverBoard(row.exampleApplyUrl)
+        : null);
     const board = extractedBoard && await validateBoard(extractedBoard)
       ? extractedBoard
       : null;
@@ -284,6 +305,106 @@ export async function resolveBrandedGreenhouseBacklog(
           notes: options.unresolvedNote ??
             "Branded Greenhouse token was not exposed by the public page HTML",
         },
+      });
+    }
+    if (pauseMs > 0 && index + 1 < selected.length) {
+      await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    }
+  }
+  return { attempted: selected.length, resolved };
+}
+
+async function probeSharedCareerApi(host: string): Promise<boolean> {
+  if (
+    !/^[a-z0-9.-]+$/i.test(host) ||
+    host === "localhost" ||
+    host.endsWith(".local") ||
+    /^\d+(?:\.\d+){3}$/.test(host)
+  ) return false;
+  try {
+    const url = new URL(`https://${host}/api/jobs`);
+    url.searchParams.set("keywords", "intern");
+    url.searchParams.set("limit", "1");
+    url.searchParams.set("page", "1");
+    const response = await fetch(url, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(10_000),
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return false;
+    const data = await response.json() as { jobs?: unknown };
+    return Array.isArray(data.jobs);
+  } catch {
+    return false;
+  }
+}
+
+/** Promote branded Phenom/Jibe sites that expose the shared `/api/jobs`
+ * contract. The normal refresh probes only a tiny bounded batch. */
+export async function resolveSharedCareerApiBacklog(
+  options: {
+    limit?: number | null;
+    pauseMs?: number;
+    probe?: (host: string) => Promise<boolean>;
+    retryAttempted?: boolean;
+  } = {},
+): Promise<{ attempted: number; resolved: number }> {
+  const rows = await prisma.communityEmployerCandidate.findMany({
+    where: {
+      status: "needs_adapter",
+      applicationHost: { not: null },
+      detectedPlatform: "unknown",
+    },
+    orderBy: [{ observations: "desc" }, { firstSeenAt: "asc" }],
+  });
+  const eligible = options.retryAttempted
+    ? rows
+    : rows.filter((row) => !row.notes?.startsWith("Shared Phenom/Jibe API probe"));
+  const selected = options.limit === null
+    ? eligible
+    : eligible.slice(0, options.limit ?? 2);
+  const probe = options.probe ?? probeSharedCareerApi;
+  const pauseMs = Math.max(0, options.pauseMs ?? 1_000);
+  let resolved = 0;
+  for (let index = 0; index < selected.length; index++) {
+    const row = selected[index];
+    const host = row.applicationHost!;
+    if (await probe(host)) {
+      const current = await prisma.discoveredAtsBoard.findUnique({
+        where: { system_token: { system: "phenom", token: host } },
+        select: { companyAliases: true },
+      });
+      await prisma.discoveredAtsBoard.upsert({
+        where: { system_token: { system: "phenom", token: host } },
+        create: {
+          system: "phenom",
+          token: host,
+          company: canonicalCompanyName(row.company),
+          companyAliases: aliases("[]", row.company),
+          evidenceUrl: row.exampleApplyUrl,
+          evidenceSource: row.evidenceSource ?? "shared Phenom/Jibe API resolver",
+          confidence: 90,
+        },
+        update: {
+          companyAliases: aliases(current?.companyAliases ?? "[]", row.company),
+          evidenceUrl: row.exampleApplyUrl,
+          lastSeenAt: new Date(),
+        },
+      });
+      await prisma.communityEmployerCandidate.update({
+        where: { companyKey: row.companyKey },
+        data: {
+          status: "resolved",
+          detectedPlatform: "phenom",
+          notes: `Resolved shared Phenom/Jibe API (${host})`,
+          lastSeenAt: new Date(),
+        },
+      });
+      resolved++;
+    } else {
+      await prisma.communityEmployerCandidate.update({
+        where: { companyKey: row.companyKey },
+        data: { notes: "Shared Phenom/Jibe API probe did not match" },
       });
     }
     if (pauseMs > 0 && index + 1 < selected.length) {
@@ -659,6 +780,7 @@ export async function bootstrapCommunityAtsBoards(limit = 5000): Promise<number>
   // command can drain the backlog slowly without turning each scrape into a
   // crawl of company websites.
   await resolveBrandedGreenhouseBacklog({ limit: 2 });
+  await resolveSharedCareerApiBacklog({ limit: 2 });
   return observed;
 }
 
@@ -696,6 +818,17 @@ function asApiCompany(row: {
       countryFilter: "post",
       queryTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
       oracle,
+    };
+  }
+  if (row.system === "phenom") {
+    return {
+      name: row.company,
+      method: "api",
+      system: "phenom",
+      validationOnly,
+      token: row.token,
+      countryFilter: "post",
+      queryTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
     };
   }
   return {

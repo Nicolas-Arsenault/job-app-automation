@@ -20,6 +20,8 @@ function source(
     expectedComplete: true,
     lastStatus: status,
     lastMessage: null,
+    lastQualityMetrics: null,
+    lastQualityWarnings: null,
     lastRunAt: new Date(Date.UTC(2026, 9, 15, 12, minutes)),
     lastCompleteRunAt: status === "success" ? new Date() : null,
     lastObservedCount: count,
@@ -52,5 +54,12 @@ describe("source health summary", () => {
     ]);
 
     expect(issues.map((issue) => issue.key)).toEqual(["error"]);
+  });
+
+  it("reports semantic quality warnings without changing source status", () => {
+    const healthy = source("quality", "Acme", "success", 2, 10);
+    healthy.lastQualityWarnings = JSON.stringify(["missing posting dates 100% (10/10)"]);
+
+    expect(sourceHealthIssues([healthy]).map((issue) => issue.key)).toEqual(["quality"]);
   });
 });

@@ -7,6 +7,8 @@ export interface SourceHealthRecord {
   expectedComplete: boolean;
   lastStatus: string | null;
   lastMessage: string | null;
+  lastQualityMetrics: string | null;
+  lastQualityWarnings: string | null;
   lastRunAt: Date | null;
   lastCompleteRunAt: Date | null;
   lastObservedCount: number | null;
@@ -22,6 +24,16 @@ function identity(source: SourceHealthRecord): string {
 
 function severity(source: SourceHealthRecord): number {
   return source.lastStatus === "error" ? 2 : 1;
+}
+
+export function parsedQualityWarnings(source: SourceHealthRecord): string[] {
+  if (!source.lastQualityWarnings) return [];
+  try {
+    const parsed = JSON.parse(source.lastQualityWarnings) as unknown;
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [source.lastQualityWarnings];
+  }
 }
 
 /**
@@ -45,6 +57,7 @@ export function sourceHealthIssues(
   }
 
   const uncovered = sources.filter((source) => {
+    if (parsedQualityWarnings(source).length > 0) return true;
     if (!source.lastStatus || !ATTENTION.has(source.lastStatus)) return false;
     if (!source.company || !source.lastRunAt) return true;
     return !(healthyAlternates.get(identity(source)) ?? []).some(

@@ -483,6 +483,10 @@ export async function ingestSourcePostings(
       postings.filter((posting) => posting.title && posting.applyUrl).length,
       new Date(),
       opts.sourceWarning,
+      {
+        rows: postings,
+        browser: descriptor.key.startsWith("browser:"),
+      },
     );
     return { counts, sourceRun: completed };
   } catch (error) {
@@ -509,6 +513,8 @@ async function runCompany(
   };
   const sourceRun = await beginDiscoverySourceRun(descriptor);
   let warningCount = 0;
+  let rawRows = 0;
+  let validRows = 0;
   const warningSamples: string[] = [];
   const onWarning = (message: string) => {
     warningCount++;
@@ -523,7 +529,15 @@ async function runCompany(
         `${warningSamples.join("; ")}${warningCount > warningSamples.length ? "; …" : ""}`
       : undefined;
   try {
-    const fetchedPostings = await fetchCompanyPostings(c, { ...ctx, onWarning });
+    const fetchedPostings = await fetchCompanyPostings(c, {
+      ...ctx,
+      onWarning,
+      onRowsParsed: (raw, valid) => {
+        rawRows += raw;
+        validRows += valid;
+        ctx.onRowsParsed?.(raw, valid);
+      },
+    });
     await recordVerifiedAtsPollOutcome(c);
     const postings = filterFocusedPostings(fetchedPostings, opts.companyFocus);
     if (c.system === "githubboard") {
@@ -547,6 +561,10 @@ async function runCompany(
       postings.filter((posting) => posting.title && posting.applyUrl).length,
       new Date(),
       sourceWarning,
+      {
+        rows: postings,
+        ...(rawRows > 0 ? { rawRows, validRows } : {}),
+      },
     );
     res.sourceRunId = completed.runId;
     res.sourceComplete = completed.complete;

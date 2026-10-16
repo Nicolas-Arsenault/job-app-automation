@@ -46,6 +46,7 @@ export type DiscoverySystem =
   | "watchlist"
   | "eightfold"
   | "oracle"
+  | "adp"
   | "workday";
 
 export type BrowserSystem =

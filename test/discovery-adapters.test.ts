@@ -1042,6 +1042,57 @@ describe("Jibe careers adapter", () => {
   });
 });
 
+describe("ADP Workforce Now adapter", () => {
+  it("loads a client board and hydrates relevant internship details gently", async () => {
+    const fields = [{
+      stringValue: "547656",
+      nameCode: { codeValue: "ExternalJobID" },
+    }];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/job-requisitions/547656?")) {
+        return jsonResponse({
+          requisitionTitle: "Software Developer Co-op/Intern",
+          postDate: "2026-10-01T11:45:00.000-04:00",
+          requisitionDescription: "<p>Build C# and TypeScript products.</p>",
+          requisitionLocations: [{ nameCode: { shortName: "Cincinnati, OH, US" } }],
+          customFieldGroup: { stringFields: fields },
+        });
+      }
+      return jsonResponse({
+        jobRequisitions: [{
+          requisitionTitle: "Software Developer Co-op/Intern",
+          postDate: "2026-10-01T11:45:00.000-04:00",
+          requisitionLocations: [{ nameCode: { shortName: "Cincinnati, OH, US" } }],
+          customFieldGroup: { stringFields: fields },
+        }],
+        meta: { totalNumber: 1 },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings({
+      name: "Example ADP Employer",
+      method: "api",
+      system: "adp",
+      token: "b156e713-5801-4c36-bb62-a62f3bc9844f",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+    });
+
+    expect(posts).toEqual([
+      expect.objectContaining({
+        externalId: "547656",
+        title: "Software Developer Co-op/Intern",
+        country: "US",
+        description: "Build C# and TypeScript products.",
+        system: "adp",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("Eightfold adapter", () => {
   it("loads current search results and details for relevant North American roles", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {

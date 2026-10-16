@@ -22,6 +22,11 @@ describe("detectAts", () => {
       ),
     ).toBe("oracle");
     expect(detectAts("https://vention.na.teamtailor.com/jobs/123")).toBe("teamtailor");
+    expect(
+      detectAts(
+        "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=abc&jobId=123",
+      ),
+    ).toBe("adp");
     expect(detectAts("https://example.com/careers/1")).toBe("unknown");
     expect(detectAts("not a url")).toBe("unknown");
   });

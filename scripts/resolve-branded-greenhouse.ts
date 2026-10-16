@@ -1,5 +1,8 @@
 import { prisma } from "../lib/db";
-import { resolveBrandedGreenhouseBacklog } from "../lib/discovery/ats-expansion";
+import {
+  greenhouseBoardFromNetworkUrls,
+  resolveBrandedGreenhouseBacklog,
+} from "../lib/discovery/ats-expansion";
 import { chromium, type Browser } from "playwright";
 
 const limitValue = Number(process.env.BRANDED_GREENHOUSE_LIMIT);
@@ -23,7 +26,7 @@ async function main() {
       retryAttempted: useBrowser,
       ...(browser
         ? {
-            fetchPage: async (url: string) => {
+            discoverBoard: async (url: string) => {
               const context = await browser!.newContext({
                 userAgent:
                   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
@@ -37,13 +40,20 @@ async function main() {
               );
               try {
                 const page = await context.newPage();
+                const networkUrls = new Set<string>();
+                page.on("request", (request) => networkUrls.add(request.url()));
+                page.on("response", (response) => networkUrls.add(response.url()));
                 const response = await page.goto(url, {
                   waitUntil: "domcontentloaded",
                   timeout: 20_000,
                 });
                 if (!response || response.status() >= 400) return null;
                 await page.waitForTimeout(1_200);
-                return await page.content();
+                const html = await page.content();
+                return greenhouseBoardFromNetworkUrls([
+                  ...networkUrls,
+                  html,
+                ]);
               } catch {
                 return null;
               } finally {

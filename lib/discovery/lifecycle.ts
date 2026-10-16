@@ -7,6 +7,11 @@ import { isIP } from "node:net";
 import { canonicalCompanyName } from "../company-names";
 import { prisma } from "../db";
 import type { ApiCompany, BrowserCompany } from "./companies";
+import {
+  evaluateSourceQuality,
+  type SourceQualityInput,
+  type SourceQualityMetrics,
+} from "./quality";
 
 export const JOB_AVAILABILITY = {
   OPEN: "open",
@@ -220,6 +225,8 @@ export interface CompletedDiscoverySourceRun {
   observedCount: number;
   reason: string;
   message: string;
+  qualityMetrics: SourceQualityMetrics | null;
+  qualityWarnings: string[];
 }
 
 export interface AvailabilityReconciliationResult {
@@ -549,6 +556,7 @@ export async function completeDiscoverySourceRun(
   observedCount: number,
   finishedAt = new Date(),
   warning?: string,
+  qualityInput?: SourceQualityInput,
 ): Promise<CompletedDiscoverySourceRun> {
   const source = await prisma.discoverySource.findUniqueOrThrow({
     where: { key: context.descriptor.key },
@@ -593,6 +601,15 @@ export async function completeDiscoverySourceRun(
   const seeded = decision.complete && source.baselineAt == null;
   if (seeded) await seedLegacySightings(context);
 
+  const quality = qualityInput
+    ? evaluateSourceQuality(qualityInput, source.lastObservedCount)
+    : null;
+  const qualityMetrics = quality ? JSON.stringify(quality.metrics) : null;
+  const qualityWarnings = quality?.warnings ?? [];
+  const qualityWarningsJson = qualityWarnings.length
+    ? JSON.stringify(qualityWarnings)
+    : null;
+
   const message = `${observedCount} postings; ${decision.reason}`;
   await prisma.$transaction([
     prisma.discoverySourceRun.update({
@@ -604,6 +621,8 @@ export async function completeDiscoverySourceRun(
         seeded,
         observedCount,
         message,
+        qualityMetrics,
+        qualityWarnings: qualityWarningsJson,
       },
     }),
     prisma.discoverySource.update({
@@ -612,6 +631,8 @@ export async function completeDiscoverySourceRun(
         lastRunAt: finishedAt,
         lastStatus: storedStatusForOutcome(decision.outcome),
         lastMessage: message,
+        lastQualityMetrics: qualityMetrics,
+        lastQualityWarnings: qualityWarningsJson,
         ...(decision.complete
           ? {
               lastCompleteRunAt: finishedAt,
@@ -633,6 +654,8 @@ export async function completeDiscoverySourceRun(
     observedCount,
     reason: decision.reason,
     message,
+    qualityMetrics: quality?.metrics ?? null,
+    qualityWarnings,
   };
 }
 

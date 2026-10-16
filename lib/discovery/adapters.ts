@@ -110,8 +110,10 @@ function requireValidPostingRows<T>(
   rows: T[],
   valid: (row: T) => boolean,
   onWarning?: (message: string) => void,
+  onRowsParsed?: (rawRows: number, validRows: number) => void,
 ): T[] {
   const validRows = rows.filter(valid);
+  onRowsParsed?.(rows.length, validRows.length);
   const invalid = rows.length - validRows.length;
   if (invalid > 0) {
     const message =
@@ -289,7 +291,7 @@ function primarySearchTerm(c: ApiCompany, ctx: FetchContext): string {
 
 // --------------------------------- Greenhouse ---------------------------------
 
-async function greenhouse(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function greenhouse(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const data = (await fetchJson(
     `https://boards-api.greenhouse.io/v1/boards/${c.token}/jobs?content=true`,
   )) as {
@@ -313,6 +315,8 @@ async function greenhouse(c: ApiCompany): Promise<DiscoveryPosting[]> {
       Number.isFinite(job?.id) &&
       isNonEmptyString(job?.title) &&
       isHttpUrl(job?.absolute_url),
+    ctx.onWarning,
+    ctx.onRowsParsed,
   );
   return jobs.map((j) => {
     const offices = (j.offices ?? []).map((o) => o.location || o.name).filter(Boolean).join(" | ");
@@ -360,6 +364,7 @@ async function ashby(
       isNonEmptyString(job?.title) &&
       (isHttpUrl(job?.applyUrl) || isHttpUrl(job?.jobUrl)),
     ctx.onWarning,
+    ctx.onRowsParsed,
   );
   return jobs.map((j) =>
     mk("ashby", c.name, {
@@ -376,7 +381,7 @@ async function ashby(
 
 // ----------------------------------- Lever -----------------------------------
 
-async function lever(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function lever(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const data = (await fetchJson(
     `https://api.lever.co/v0/postings/${c.token}?mode=json`,
   )) as {
@@ -399,6 +404,8 @@ async function lever(c: ApiCompany): Promise<DiscoveryPosting[]> {
       isNonEmptyString(job?.id) &&
       isNonEmptyString(job?.text) &&
       (isHttpUrl(job?.hostedUrl) || isHttpUrl(job?.applyUrl)),
+    ctx.onWarning,
+    ctx.onRowsParsed,
   );
   return jobs.map((j) => {
     const loc =
@@ -417,7 +424,7 @@ async function lever(c: ApiCompany): Promise<DiscoveryPosting[]> {
 
 // --------------------------------- Workable ---------------------------------
 
-async function workable(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function workable(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   if (!isNonEmptyString(c.token)) {
     throw new Error("Workable source requires an account token");
   }
@@ -454,6 +461,8 @@ async function workable(c: ApiCompany): Promise<DiscoveryPosting[]> {
       isNonEmptyString(job?.title) &&
       isNonEmptyString(job?.shortcode) &&
       (isHttpUrl(job?.url) || isHttpUrl(job?.application_url)),
+    ctx.onWarning,
+    ctx.onRowsParsed,
   );
   return jobs.map((job) => {
     const locations = (job.locations ?? [])
@@ -547,7 +556,7 @@ function teamtailorLocationFromHtml(html: string): string {
   throw new Error("Teamtailor detail did not contain JobPosting structured data");
 }
 
-async function teamtailor(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function teamtailor(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   if (!isNonEmptyString(c.token)) {
     throw new Error("Teamtailor source requires an account token");
   }
@@ -573,6 +582,8 @@ async function teamtailor(c: ApiCompany): Promise<DiscoveryPosting[]> {
       isNonEmptyString(job?.id) &&
       isNonEmptyString(job?.title) &&
       isHttpUrl(job?.url),
+    ctx.onWarning,
+    ctx.onRowsParsed,
   );
   return mapPool(jobs, 2, async (job) => {
     if (process.env.NODE_ENV !== "test") {
@@ -677,6 +688,8 @@ async function netflix(
         "Netflix",
         data.positions,
         (job) => Number.isFinite(job?.id) && isNonEmptyString(job?.name),
+        ctx.onWarning,
+        ctx.onRowsParsed,
       );
       const reportedCount = Number(data.count);
       total =
@@ -827,6 +840,112 @@ async function phenom(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryP
   return out;
 }
 
+// --------------------------- ADP Workforce Now ---------------------------
+
+async function adp(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
+  if (!isNonEmptyString(c.token)) throw new Error("ADP source requires a client id");
+  type AdpRow = {
+    requisitionTitle?: string;
+    postDate?: string;
+    requisitionDescription?: string;
+    requisitionLocations?: {
+      nameCode?: { shortName?: string };
+      address?: {
+        cityName?: string;
+        countrySubdivisionLevel1?: { codeValue?: string };
+        countryCode?: string;
+      };
+    }[];
+    customFieldGroup?: {
+      stringFields?: { stringValue?: string; nameCode?: { codeValue?: string } }[];
+    };
+  };
+  const cid = c.token;
+  const rows: AdpRow[] = [];
+  let total = Number.POSITIVE_INFINITY;
+  for (let skip = 0; skip < total && skip < 1_000; skip += 50) {
+    const url = new URL(
+      "https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions",
+    );
+    url.searchParams.set("cid", cid);
+    url.searchParams.set("lang", "en_US");
+    url.searchParams.set("locale", "en_US");
+    url.searchParams.set("$top", "50");
+    url.searchParams.set("$skip", String(skip));
+    const data = await fetchJson(url.toString()) as {
+      jobRequisitions?: AdpRow[];
+      meta?: { totalNumber?: number };
+    };
+    if (!Array.isArray(data.jobRequisitions)) {
+      throw new Error("ADP response did not contain a jobRequisitions array");
+    }
+    const page = requireValidPostingRows(
+      "ADP",
+      data.jobRequisitions,
+      (row) => isNonEmptyString(row.requisitionTitle) && Boolean(adpExternalId(row)),
+      ctx.onWarning,
+      ctx.onRowsParsed,
+    );
+    rows.push(...page);
+    total = Number.isFinite(Number(data.meta?.totalNumber))
+      ? Number(data.meta?.totalNumber)
+      : skip + page.length;
+    if (data.jobRequisitions.length < 50) break;
+  }
+
+  const candidates = rows.filter((row) =>
+    isSoftwareRole(row.requisitionTitle ?? "") &&
+    /\b(?:intern(?:ship)?|co-?op|student)\b/i.test(row.requisitionTitle ?? ""),
+  );
+  const details = new Map<string, AdpRow>();
+  await mapPool(candidates.slice(0, 20), 2, async (row) => {
+    if (process.env.NODE_ENV !== "test") await wait(300 + Math.floor(Math.random() * 301));
+    const id = adpExternalId(row)!;
+    const url = new URL(
+      `https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/${id}`,
+    );
+    url.searchParams.set("cid", cid);
+    url.searchParams.set("lang", "en_US");
+    url.searchParams.set("locale", "en_US");
+    details.set(id, await fetchJson(url.toString()) as AdpRow);
+  });
+
+  return rows.map((summary) => {
+    const id = adpExternalId(summary)!;
+    const row = details.get(id) ?? summary;
+    const location = (row.requisitionLocations ?? []).map((item) =>
+      item.nameCode?.shortName ?? [
+        item.address?.cityName,
+        item.address?.countrySubdivisionLevel1?.codeValue,
+        item.address?.countryCode,
+      ].filter(Boolean).join(", "),
+    ).filter(Boolean).join(" | ");
+    const applyUrl = new URL(
+      "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html",
+    );
+    applyUrl.searchParams.set("cid", cid);
+    applyUrl.searchParams.set("jobId", id);
+    return mk("adp", c.name, {
+      title: row.requisitionTitle ?? summary.requisitionTitle ?? "",
+      location,
+      applyUrl: applyUrl.toString(),
+      externalId: id,
+      description: stripHtml(row.requisitionDescription),
+      postedAt: toDate(row.postDate ?? summary.postDate),
+    });
+  });
+}
+
+function adpExternalId(row: {
+  customFieldGroup?: {
+    stringFields?: { stringValue?: string; nameCode?: { codeValue?: string } }[];
+  };
+}): string | null {
+  return row.customFieldGroup?.stringFields?.find(
+    (field) => field.nameCode?.codeValue === "ExternalJobID",
+  )?.stringValue ?? null;
+}
+
 // -------------------------------- Eightfold ---------------------------------
 
 async function eightfold(
@@ -860,6 +979,8 @@ async function eightfold(
         `${c.name} Eightfold`,
         response.data.positions,
         (row) => row.id != null && isNonEmptyString(row.name) && isNonEmptyString(row.positionUrl),
+        ctx.onWarning,
+        ctx.onRowsParsed,
       );
       for (const row of positions) rows.set(String(row.id), row);
       if (positions.length === 0 || start + positions.length >= (response.data.count ?? 0)) break;
@@ -957,6 +1078,8 @@ async function oracle(
         `${c.name} Oracle`,
         page.requisitionList,
         (row) => isNonEmptyString(row.Id) && isNonEmptyString(row.Title),
+        ctx.onWarning,
+        ctx.onRowsParsed,
       );
       for (const row of jobs) rows.set(row.Id!, row);
       if (jobs.length === 0 || offset + jobs.length >= (page.TotalJobsCount ?? 0)) break;
@@ -1742,6 +1865,7 @@ const FETCHERS: Record<
   netflix,
   snap,
   phenom,
+  adp,
   eightfold,
   oracle,
   spotify,
@@ -1759,6 +1883,8 @@ export interface FetchContext {
   internshipsOnly?: boolean;
   watchedCompanies?: WatchedCompany[];
   onWarning?: (message: string) => void;
+  /** Adapter-level raw/valid row counts for semantic quality telemetry. */
+  onRowsParsed?: (rawRows: number, validRows: number) => void;
 }
 
 // ------------------------------- Company watchlist -------------------------------

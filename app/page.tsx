@@ -13,7 +13,10 @@ import { ACTIVE_JOB_WHERE } from "@/lib/jobs/availability";
 import { getDiscoveryScopeCopy } from "@/lib/discovery/scope";
 import { getDiscoveryConfig } from "@/lib/discovery/config";
 import { getDiscoveryCoverageReport } from "@/lib/discovery/coverage";
-import { sourceHealthIssues as summarizeSourceHealth } from "@/lib/discovery/source-health";
+import {
+  parsedQualityWarnings,
+  sourceHealthIssues as summarizeSourceHealth,
+} from "@/lib/discovery/source-health";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +76,8 @@ export default async function OverviewPage() {
         expectedComplete: true,
         lastStatus: true,
         lastMessage: true,
+        lastQualityMetrics: true,
+        lastQualityWarnings: true,
         lastRunAt: true,
         lastCompleteRunAt: true,
         lastObservedCount: true,
@@ -158,8 +163,11 @@ export default async function OverviewPage() {
             {visibleSourceHealthIssues.map((source) => (
               <div key={source.key}>
                 <span className="font-medium">{source.company ?? source.name}</span>
-                {` · ${source.lastStatus} · ${timeAgo(source.lastRunAt)}`}
+                {` · ${parsedQualityWarnings(source).length ? "quality warning" : source.lastStatus} · ${timeAgo(source.lastRunAt)}`}
                 {source.lastMessage ? ` — ${source.lastMessage}` : ""}
+                {parsedQualityWarnings(source).length
+                  ? ` · quality: ${parsedQualityWarnings(source).join("; ")}`
+                  : ""}
                 {source.lastCompleteRunAt
                   ? ` · last clean run ${timeAgo(source.lastCompleteRunAt)}`
                   : !source.authoritative || !source.expectedComplete
