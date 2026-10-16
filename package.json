@@ -34,6 +34,7 @@
     "discovery:benchmark": "tsx scripts/benchmark-coverage.ts",
     "discovery:benchmark:fresh": "tsx scripts/fresh-coverage-benchmark.ts",
     "ats:bootstrap": "tsx scripts/bootstrap-ats.ts",
+    "ats:resolve-branded-greenhouse": "tsx scripts/resolve-branded-greenhouse.ts",
     "ats:validate-all": "tsx scripts/validate-ats-queue.ts",
     "ats:validate-browser": "tsx scripts/validate-browser-ats.ts",
     "companies:dedupe": "tsx scripts/dedupe-companies.ts",

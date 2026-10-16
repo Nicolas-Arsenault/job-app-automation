@@ -3,8 +3,10 @@ import { prisma } from "../lib/db";
 import {
   atsBoardFromUrl,
   bootstrapCommunityAtsBoards,
+  greenhouseBoardFromHtml,
   observeCommunityAtsBoards,
   recordVerifiedAtsPollOutcome,
+  resolveBrandedGreenhouseBacklog,
   validatePendingAtsBoards,
   verifiedAtsCompanies,
 } from "../lib/discovery/ats-expansion";
@@ -86,6 +88,68 @@ describe("automatic ATS expansion", () => {
         "https://boards.greenhouse.io/embed/job_app?for=acme&gh_jid=12345",
       ),
     ).toEqual({ system: "greenhouse", token: "acme" });
+  });
+
+  it("extracts Greenhouse board tokens hidden in branded page markup", () => {
+    expect(
+      greenhouseBoardFromHtml(
+        `<script>const url = 'https:\\/\\/boards-api.greenhouse.io\\/v1\\/boards\\/ixllearning\\/jobs\\/8765770002';</script>`,
+      ),
+    ).toEqual({ system: "greenhouse", token: "ixllearning" });
+    expect(
+      greenhouseBoardFromHtml(
+        `<iframe src="https://boards.greenhouse.io/embed/job_app?for=acme&amp;token=123"></iframe>`,
+      ),
+    ).toEqual({ system: "greenhouse", token: "acme" });
+    expect(greenhouseBoardFromHtml(`<div data-board="not-a-vendor-url"></div>`)).toBeNull();
+  });
+
+  it("promotes branded Greenhouse candidates into the supported ATS queue", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://careers.acme.test/openings?gh_jid=12345", "Acme")],
+      "Community A",
+    );
+
+    const result = await resolveBrandedGreenhouseBacklog({
+      limit: null,
+      pauseMs: 0,
+      fetchPage: async () =>
+        `<script src="https://boards-api.greenhouse.io/v1/boards/acme/jobs/12345"></script>`,
+      validateBoard: async () => true,
+    });
+
+    expect(result).toEqual({ attempted: 1, resolved: 1 });
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      company: "Acme",
+      system: "greenhouse",
+      token: "acme",
+      status: "pending",
+    });
+    expect(await prisma.communityEmployerCandidate.findFirstOrThrow()).toMatchObject({
+      status: "resolved",
+      detectedPlatform: "greenhouse",
+    });
+  });
+
+  it("keeps unresolved branded pages in the adapter backlog with diagnostics", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://careers.acme.test/openings?gh_jid=12345", "Acme")],
+      "Community A",
+    );
+
+    expect(
+      await resolveBrandedGreenhouseBacklog({
+        limit: null,
+        pauseMs: 0,
+        fetchPage: async () =>
+          `<script src="https://boards-api.greenhouse.io/v1/boards/wrong-token/jobs"></script>`,
+        validateBoard: async () => false,
+      }),
+    ).toEqual({ attempted: 1, resolved: 0 });
+    expect(await prisma.communityEmployerCandidate.findFirstOrThrow()).toMatchObject({
+      status: "needs_adapter",
+      notes: "Branded Greenhouse token was not exposed by the public page HTML",
+    });
   });
 
   it("records one pending candidate and preserves employer aliases", async () => {
