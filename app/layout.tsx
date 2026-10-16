@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Nav } from "./components/Nav";
 import { MobileNav } from "./components/MobileNav";
@@ -22,9 +23,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      </head>
       <body className="min-h-full">
         <ThemeProvider>
           <div className="app-shell flex min-h-screen">
@@ -70,6 +68,9 @@ export default function RootLayout({
             </div>
           </div>
         </ThemeProvider>
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInitScript}
+        </Script>
       </body>
     </html>
   );
