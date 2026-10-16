@@ -4,6 +4,7 @@ import {
   atsBoardFromUrl,
   bootstrapCommunityAtsBoards,
   observeCommunityAtsBoards,
+  recordVerifiedAtsPollOutcome,
   validatePendingAtsBoards,
   verifiedAtsCompanies,
 } from "../lib/discovery/ats-expansion";
@@ -180,6 +181,38 @@ describe("automatic ATS expansion", () => {
     expect(await verifiedAtsCompanies()).toEqual([
       expect.objectContaining({ name: "Acme, Inc.", system: "greenhouse", token: "acmeco" }),
     ]);
+  });
+
+  it("backs off a learned board after three terminal polling failures and recovers on success", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://jobs.ashbyhq.com/acme/abc")],
+      "Community A",
+    );
+    await validatePendingAtsBoards(
+      {},
+      { concurrency: 1, validate: async () => [] },
+    );
+    const [company] = await verifiedAtsCompanies();
+    const now = new Date("2026-10-15T12:00:00Z");
+
+    await recordVerifiedAtsPollOutcome(company, new Error("HTTP 404"), now);
+    await recordVerifiedAtsPollOutcome(company, new Error("HTTP 404"), now);
+    await recordVerifiedAtsPollOutcome(company, new Error("HTTP 404"), now);
+
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      status: "pending",
+      failureCount: 3,
+      lastError: "HTTP 404",
+      nextRetryAt: new Date("2026-10-22T12:00:00Z"),
+    });
+
+    await recordVerifiedAtsPollOutcome(company);
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      status: "verified",
+      failureCount: 0,
+      lastError: null,
+      nextRetryAt: null,
+    });
   });
 
   it("turns discovered Workday configuration into a pollable source", async () => {

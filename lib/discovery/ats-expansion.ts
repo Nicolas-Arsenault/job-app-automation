@@ -11,6 +11,7 @@ import {
 import type { DiscoveryPosting, FetchContext } from "./adapters";
 import { fetchCompanyPostings } from "./adapters";
 import { isCompanyFocused } from "./company-focus";
+import { describeApiSource } from "./lifecycle";
 import { mapPool, type ResolvedSystem } from "./yc";
 
 export type ExpandableAtsSystem =
@@ -654,6 +655,64 @@ export async function verifiedAtsCompanies(): Promise<ApiCompany[]> {
     select: { company: true, system: true, token: true },
   });
   return rows.map((row) => asApiCompany(row));
+}
+
+/** Track terminal failures from normal polling, not only initial validation. */
+export async function recordVerifiedAtsPollOutcome(
+  company: ApiCompany,
+  error?: unknown,
+  now = new Date(),
+): Promise<void> {
+  const key = atsCompanyBoardKey(company);
+  if (!key) return;
+  const separator = key.indexOf(":");
+  const system = key.slice(0, separator);
+  const token = key.slice(separator + 1);
+  const rows = await prisma.discoveredAtsBoard.findMany({
+    where: { system, status: { in: ["verified", "pending"] } },
+  });
+  const row = rows.find((candidate) => candidate.token.toLowerCase() === token);
+  if (!row) return;
+
+  if (error === undefined) {
+    if (row.failureCount === 0 && !row.lastError) return;
+    await prisma.discoveredAtsBoard.update({
+      where: { id: row.id },
+      data: { failureCount: 0, lastError: null, nextRetryAt: null, status: "verified" },
+    });
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (!/^HTTP (404|410)\b/.test(message)) return;
+  const failureCount = row.failureCount + 1;
+  await prisma.discoveredAtsBoard.update({
+    where: { id: row.id },
+    data: {
+      failureCount,
+      lastError: message.slice(0, 500),
+      lastValidatedAt: now,
+      ...(failureCount >= 3
+        ? {
+            status: "pending",
+            // Stop hammering a removed board, then gently revalidate it later.
+            nextRetryAt: new Date(now.getTime() + 7 * 24 * 3_600_000),
+          }
+        : {}),
+    },
+  });
+  if (failureCount >= 3) {
+    const descriptor = describeApiSource(company);
+    await prisma.discoverySource.updateMany({
+      where: { key: descriptor.key },
+      data: {
+        lastStatus: "limited",
+        lastMessage:
+          `${message}; learned board paused after ${failureCount} terminal failures; ` +
+          "validation will retry in 7 days",
+      },
+    });
+  }
 }
 
 export async function discoveredAtsBoardCount(companyFocus?: string[]): Promise<number> {

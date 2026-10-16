@@ -60,7 +60,7 @@ const MIDTECH = new Set(
     "StackAdapt", "TouchBistro", "Thinkific", "Verkada", "SoFi", "Chime",
     "Roku", "Grafana Labs", "CircleCI", "Cockroach Labs", "PagerDuty",
     "New Relic", "Webflow", "Box", "Klaviyo", "D2L", "Wattpad", "Waabi",
-    "Jobber", "Geotab Internships", "Visier", "Astera Labs Early Career",
+    "Jobber", "Geotab Internships", "Visier", "Egra", "Astera Labs Early Career",
     "Trulioo Co-op & Internships", "Rivian and Volkswagen Group Technologies",
     "nCino Early Talent", "Superhuman",
     "RBC", "TD", "BMO", "CIBC", "Manulife", "CPP Investments", "EQ Bank",

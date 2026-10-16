@@ -107,7 +107,6 @@ export async function GET(req: NextRequest) {
     include: {
       sightings: { include: { source: sourceSelect } },
     },
-    take: 4000,
   });
 
   // Effective posting time: real postedAt when the ATS gives one, else the

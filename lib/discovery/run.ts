@@ -11,6 +11,7 @@ import {
   atsCompanyBoardKey,
   bootstrapCommunityAtsBoards,
   observeCommunityAtsBoards,
+  recordVerifiedAtsPollOutcome,
   validatePendingAtsBoards,
   verifiedAtsCompanies,
 } from "./ats-expansion";
@@ -523,6 +524,7 @@ async function runCompany(
       : undefined;
   try {
     const fetchedPostings = await fetchCompanyPostings(c, { ...ctx, onWarning });
+    await recordVerifiedAtsPollOutcome(c);
     const postings = filterFocusedPostings(fetchedPostings, opts.companyFocus);
     if (c.system === "githubboard") {
       try {
@@ -575,6 +577,12 @@ async function runCompany(
               : String(lifecycleError)
           }`,
       }).reason;
+    }
+    // Maintenance bookkeeping must never replace the source's real failure.
+    try {
+      await recordVerifiedAtsPollOutcome(c, e);
+    } catch {
+      // The durable source run above remains the canonical health record.
     }
   }
   return res;
@@ -634,21 +642,17 @@ export async function runDiscovery(opts?: {
   }
   const disabled = new Set(config.disabledSources.map((s) => s.toLowerCase()));
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
-  const staticBoardIds = new Set(
-    DISCOVERY_SOURCES.flatMap((source) => {
-      const key = atsCompanyBoardKey(source);
-      return key ? [key] : [];
-    }),
-  );
+  const seenBoardIds = new Set<string>();
   const allSources = [
     ...(opts?.includeStaticSources === false ? [] : DISCOVERY_SOURCES),
-    ...expandedCompanies.filter(
-      (source) => {
-        const key = atsCompanyBoardKey(source);
-        return !key || !staticBoardIds.has(key);
-      },
-    ),
-  ];
+    ...expandedCompanies,
+  ].filter((source) => {
+    const key = atsCompanyBoardKey(source);
+    if (!key) return true;
+    if (seenBoardIds.has(key)) return false;
+    seenBoardIds.add(key);
+    return true;
+  });
   const AGGREGATORS = ["ycombinator", "watchlist", "githubboard"] as const;
   const isAggregator = (c: ApiCompany) =>
     (AGGREGATORS as readonly string[]).includes(c.system);

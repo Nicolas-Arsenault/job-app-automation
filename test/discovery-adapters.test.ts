@@ -16,6 +16,7 @@ describe("curated Greenhouse and Ashby career sources", () => {
     ["Zipline", "greenhouse", "flyzipline", "https://boards-api.greenhouse.io/v1/boards/flyzipline/jobs?content=true"],
     ["Replit", "ashby", "replit", "https://api.ashbyhq.com/posting-api/job-board/replit"],
     ["Cursor", "ashby", "cursor", "https://api.ashbyhq.com/posting-api/job-board/cursor"],
+    ["Visier", "ashby", "visier", "https://api.ashbyhq.com/posting-api/job-board/visier"],
   ] as const)(
     "uses the official %s %s board",
     async (name, system, token, expectedUrl) => {
@@ -69,6 +70,26 @@ describe("curated Greenhouse and Ashby career sources", () => {
 });
 
 describe("Canada-first ATS adapters", () => {
+  it("supports Teamtailor custom career domains", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const company: ApiCompany = {
+      name: "Egra",
+      method: "api",
+      system: "teamtailor",
+      token: "careers.egra.com",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+    };
+
+    await fetchCompanyPostings(company);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://careers.egra.com/jobs.json",
+      expect.any(Object),
+    );
+  });
+
   it("maps Workable account jobs and preserves structured experience metadata", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -200,7 +221,7 @@ describe("microsoft adapter (pcsx)", () => {
 
     const c = API_COMPANIES.find((x) => x.name === "Microsoft")!;
     const pending = fetchCompanyPostings(c, { internshipsOnly: true });
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(5_000);
     const posts = await pending;
     const us = posts.find((p) => p.externalId === "111")!;
     const ca = posts.find((p) => p.externalId === "222")!;
@@ -245,7 +266,7 @@ describe("microsoft adapter (pcsx)", () => {
     const company = API_COMPANIES.find((candidate) => candidate.name === "Microsoft")!;
 
     const pending = fetchCompanyPostings(company, { onWarning });
-    await vi.advanceTimersByTimeAsync(2_499);
+    await vi.advanceTimersByTimeAsync(4_999);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     const posts = await pending;
@@ -707,6 +728,37 @@ describe("lever adapter", () => {
 });
 
 describe("authoritative ATS response validation", () => {
+  it("keeps valid Ashby rows and warns when a mixed response contains a malformed row", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      jobs: [
+        {
+          id: "valid-1",
+          title: "Software Engineering Intern",
+          location: "United States",
+          applyUrl: "https://jobs.ashbyhq.com/acme/valid-1/application",
+        },
+        { id: "", title: "Broken row", applyUrl: "" },
+      ],
+    })));
+    const onWarning = vi.fn();
+    const company: ApiCompany = {
+      name: "Acme",
+      method: "api",
+      system: "ashby",
+      token: "acme",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+    };
+
+    const postings = await fetchCompanyPostings(company, { onWarning });
+
+    expect(postings).toHaveLength(1);
+    expect(postings[0].externalId).toBe("valid-1");
+    expect(onWarning).toHaveBeenCalledWith(
+      expect.stringContaining("1 structurally invalid job row; skipped invalid row"),
+    );
+  });
+
   it.each([
     {
       system: "greenhouse" as const,

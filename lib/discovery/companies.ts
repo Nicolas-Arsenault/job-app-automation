@@ -235,7 +235,7 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "DoorDash Canada", method: "api", system: "greenhouse", token: "doordashcanada", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Geotab Internships", method: "api", system: "greenhouse", token: "internshiplist2000", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Tenstorrent University", method: "api", system: "greenhouse", token: "tenstorrentuniversity", countryFilter: "post", queryTerms: SWE_BROAD },
-  { name: "Visier", method: "api", system: "greenhouse", token: "visiersolutionsinc", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Visier", method: "api", system: "ashby", token: "visier", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Astera Labs Early Career", method: "api", system: "greenhouse", token: "asteraearlycareer2027", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Trulioo Co-op & Internships", method: "api", system: "ashby", token: "trulioo-coopandinterns", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Rivian and Volkswagen Group Technologies", method: "api", system: "ashby", token: "rivianvw.tech", countryFilter: "post", queryTerms: SWE_BROAD },
@@ -326,6 +326,7 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Genetec", method: "api", system: "workable", token: "genetec-inc", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Nuvei", method: "api", system: "workable", token: "nuvei", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Vention", method: "api", system: "teamtailor", token: "vention.na", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Egra", method: "api", system: "teamtailor", token: "careers.egra.com", countryFilter: "post", queryTerms: SWE_BROAD },
 
   // ---- Quant / high-frequency trading firms — verified live (Greenhouse /
   // Lever / Ashby). Only software roles (SWE / ML / infra / devops) survive the

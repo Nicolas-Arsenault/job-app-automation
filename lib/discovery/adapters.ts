@@ -109,17 +109,19 @@ function requireValidPostingRows<T>(
   source: string,
   rows: T[],
   valid: (row: T) => boolean,
+  onWarning?: (message: string) => void,
 ): T[] {
-  const invalid = rows.reduce(
-    (count, row) => count + (valid(row) ? 0 : 1),
-    0,
-  );
+  const validRows = rows.filter(valid);
+  const invalid = rows.length - validRows.length;
   if (invalid > 0) {
-    throw new Error(
-      `${source} response contained ${invalid} structurally invalid job row${invalid === 1 ? "" : "s"}`,
-    );
+    const message =
+      `${source} response contained ${invalid} structurally invalid job row${invalid === 1 ? "" : "s"}`;
+    // A wholly malformed payload is unsafe. A mixed payload can still preserve
+    // valid openings, but must be marked degraded so it is never closure evidence.
+    if (validRows.length === 0 || !onWarning) throw new Error(message);
+    onWarning(`${message}; skipped invalid row${invalid === 1 ? "" : "s"}`);
   }
-  return rows;
+  return validRows;
 }
 
 // Best-effort HTML fetch used by the YC ATS resolver. Missing pages yield an
@@ -328,7 +330,10 @@ async function greenhouse(c: ApiCompany): Promise<DiscoveryPosting[]> {
 
 // ----------------------------------- Ashby -----------------------------------
 
-async function ashby(c: ApiCompany): Promise<DiscoveryPosting[]> {
+async function ashby(
+  c: ApiCompany,
+  ctx: FetchContext = {},
+): Promise<DiscoveryPosting[]> {
   const data = (await fetchJson(
     `https://api.ashbyhq.com/posting-api/job-board/${c.token}`,
   )) as {
@@ -354,6 +359,7 @@ async function ashby(c: ApiCompany): Promise<DiscoveryPosting[]> {
       isNonEmptyString(job?.id) &&
       isNonEmptyString(job?.title) &&
       (isHttpUrl(job?.applyUrl) || isHttpUrl(job?.jobUrl)),
+    ctx.onWarning,
   );
   return jobs.map((j) =>
     mk("ashby", c.name, {
@@ -545,9 +551,10 @@ async function teamtailor(c: ApiCompany): Promise<DiscoveryPosting[]> {
   if (!isNonEmptyString(c.token)) {
     throw new Error("Teamtailor source requires an account token");
   }
-  const data = (await fetchJson(
-    `https://${c.token}.teamtailor.com/jobs.json`,
-  )) as {
+  const teamtailorHost = c.token.includes(".") && /\.(?:com|ca|io)$/i.test(c.token)
+    ? c.token
+    : `${c.token}.teamtailor.com`;
+  const data = (await fetchJson(`https://${teamtailorHost}/jobs.json`)) as {
     items?: {
       id?: string;
       title?: string;
@@ -1205,7 +1212,7 @@ async function microsoft(
     // this host. A rate-limited page stops the source for the current cycle;
     // the next scheduled run is two hours away, so no immediate retry is useful.
     if (requests > 0) {
-      await wait(2_500 + Math.floor(Math.random() * 1_001));
+      await wait(5_000 + Math.floor(Math.random() * 2_001));
     }
     requests++;
     return fetchJson(url);
