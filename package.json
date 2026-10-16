@@ -29,10 +29,13 @@
     "sources:probe": "tsx scripts/probe-sources.ts",
     "discovery:verify": "tsx scripts/verify-queries.ts",
     "discover": "tsx scripts/discover.ts",
+    "config:canada-brand": "tsx scripts/apply-discovery-preset.ts canada-brand",
     "discover:browser": "tsx scripts/discover.ts --browser",
     "discovery:benchmark": "tsx scripts/benchmark-coverage.ts",
     "discovery:benchmark:fresh": "tsx scripts/fresh-coverage-benchmark.ts",
     "ats:bootstrap": "tsx scripts/bootstrap-ats.ts",
+    "ats:validate-all": "tsx scripts/validate-ats-queue.ts",
+    "ats:validate-browser": "tsx scripts/validate-browser-ats.ts",
     "companies:dedupe": "tsx scripts/dedupe-companies.ts",
     "jobs:dedupe": "tsx scripts/dedupe-jobs.ts"
   },

@@ -344,7 +344,7 @@ model CommunityEmployerCandidate {
   exampleApplyUrl  String
   exampleTitle     String?
   evidenceSource   String?
-  status           String   @default("needs_adapter") // needs_adapter | resolved | ignored
+  status           String   @default("needs_adapter") // needs_adapter | browser_ready | browser_blocked | resolved | ignored
   observations     Int      @default(1)
   firstSeenAt      DateTime @default(now())
   lastSeenAt       DateTime @default(now())

@@ -22,6 +22,22 @@ function posting(over: Partial<DiscoveryPosting>): DiscoveryPosting {
 beforeEach(resetDb);
 
 describe("conservative cross-source dedup (discovery persist)", () => {
+  it("keeps only selected employers when a company focus is active", async () => {
+    await ingestPostings(
+      [
+        posting({ company: "Nokia", externalId: "nokia-1" }),
+        posting({ company: "Acme", externalId: "acme-1", applyUrl: "https://acme.test/1" }),
+      ],
+      true,
+      undefined,
+      { companyFocus: ["Nokia"] },
+    );
+
+    expect(await prisma.job.findMany({ select: { company: true } })).toEqual([
+      { company: "Nokia" },
+    ]);
+  });
+
   it("keeps employer and community timestamps separate", async () => {
     const communityDate = new Date("2026-10-03T12:00:00Z");
     await ingestPostings(

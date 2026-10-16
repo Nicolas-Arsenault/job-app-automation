@@ -77,6 +77,7 @@ export default function SettingsPage() {
   const [roleKeywordsText, setRoleKeywordsText] = useState("");
   const [excludeTitleKeywordsText, setExcludeTitleKeywordsText] = useState("");
   const [queryTermsText, setQueryTermsText] = useState("");
+  const [companyFocusText, setCompanyFocusText] = useState("");
   const [watchedCompaniesText, setWatchedCompaniesText] = useState("");
   const [goldenTitleKeywordsText, setGoldenTitleKeywordsText] = useState("");
   const [goldenDescriptionKeywordsText, setGoldenDescriptionKeywordsText] =
@@ -113,6 +114,7 @@ export default function SettingsPage() {
         setRoleKeywordsText(listText(data.config.roleKeywords));
         setExcludeTitleKeywordsText(listText(data.config.excludeTitleKeywords));
         setQueryTermsText(listText(data.config.queryTerms));
+        setCompanyFocusText(data.config.companyFocus.join("\n"));
         setWatchedCompaniesText(
           data.config.watchedCompanies
             .map((company) => `${company.name} | ${company.website}`)
@@ -156,6 +158,7 @@ export default function SettingsPage() {
       setRoleKeywordsText(listText(data.config.roleKeywords));
       setExcludeTitleKeywordsText(listText(data.config.excludeTitleKeywords));
       setQueryTermsText(listText(data.config.queryTerms));
+      setCompanyFocusText(data.config.companyFocus.join("\n"));
       setWatchedCompaniesText(
         data.config.watchedCompanies
           .map((company) => `${company.name} | ${company.website}`)
@@ -257,6 +260,7 @@ export default function SettingsPage() {
     setRoleKeywordsText(listText(saved.roleKeywords));
     setExcludeTitleKeywordsText(listText(saved.excludeTitleKeywords));
     setQueryTermsText(listText(saved.queryTerms));
+    setCompanyFocusText(saved.companyFocus.join("\n"));
     setWatchedCompaniesText(
       saved.watchedCompanies
         .map((company) => `${company.name} | ${company.website}`)
@@ -302,6 +306,7 @@ export default function SettingsPage() {
         roleKeywords: parseList(roleKeywordsText),
         excludeTitleKeywords: parseList(excludeTitleKeywordsText),
         queryTerms: parseList(queryTermsText),
+        companyFocus: parseList(companyFocusText),
         watchedCompanies: watchedCompaniesText
           .split(/\r?\n/)
           .map((line) => {
@@ -404,6 +409,7 @@ export default function SettingsPage() {
             ...config,
             roleKeywords: parseList(roleKeywordsText),
             queryTerms: parseList(queryTermsText),
+            companyFocus: parseList(companyFocusText),
           },
           ...scopeContext,
         })
@@ -812,6 +818,25 @@ export default function SettingsPage() {
                 {saving ? "Saving..." : "Save Golden jobs"}
               </button>
             </div>
+          </section>
+
+          <section className={cls.card}>
+            <h2 className="text-lg font-semibold">Employer focus</h2>
+            <p className={helper}>
+              When this list is non-empty, discovery fetches only these direct employer sources
+              and keeps only matching rows from community boards. Leave it empty for broad market coverage.
+            </p>
+            <textarea
+              id="companyFocus"
+              className={cls.input + " mt-4 min-h-44 resize-y font-mono text-sm"}
+              value={companyFocusText}
+              onChange={(event) => {
+                setCompanyFocusText(event.target.value);
+                setMessage(null);
+              }}
+              placeholder={"Shopify\nNokia\nCoveo\nRBC"}
+            />
+            <p className={helper}>One employer per line. Common legal-name variants are normalized.</p>
           </section>
 
           <section className={cls.card}>

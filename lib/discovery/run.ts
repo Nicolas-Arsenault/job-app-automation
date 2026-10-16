@@ -6,10 +6,12 @@ import { classifyEntryLevel, type EntryLevelOptions } from "./entryLevel";
 import { enrich, type Enrichment } from "./enrich";
 import { getDiscoveryConfig, toEntryLevelOptions, type DiscoveryConfigData } from "./config";
 import { DISCOVERY_SOURCES, type ApiCompany } from "./companies";
+import { filterFocusedPostings, isCompanyFocused } from "./company-focus";
 import {
   atsCompanyBoardKey,
   bootstrapCommunityAtsBoards,
   observeCommunityAtsBoards,
+  recordVerifiedAtsPollOutcome,
   validatePendingAtsBoards,
   verifiedAtsCompanies,
 } from "./ats-expansion";
@@ -37,6 +39,7 @@ import {
   type DiscoverySourceRunContext,
   type PostingVerifier,
 } from "./lifecycle";
+import { mapPool } from "./yc";
 
 // The discovery runner: fetch each API company's public endpoint, keep only
 // US / Canada entry-level software roles, and upsert them into the Job table
@@ -396,6 +399,8 @@ export interface IngestOptions {
   entryOptions?: EntryLevelOptions;
   /** Countries to keep. Omit to keep the default US + CA. */
   countries?: string[];
+  /** Employers to retain. Empty/omitted keeps all employers. */
+  companyFocus?: string[];
   /** Durable source-run evidence. Omit for legacy callers and isolated tests. */
   sourceRun?: DiscoverySourceRunContext;
   /** Non-fatal source degradation that makes this run unsafe for absence evidence. */
@@ -412,7 +417,7 @@ export async function ingestPostings(
   opts: IngestOptions = {},
 ): Promise<IngestCounts> {
   const countries = opts.countries?.length ? opts.countries : ["US", "CA"];
-  for (const p of postings) {
+  for (const p of filterFocusedPostings(postings, opts.companyFocus)) {
     if (!p.title || !p.applyUrl) continue;
     const inCountry = countries.includes(p.country);
     if (inCountry && p.country === "US") res.usTotal++;
@@ -518,7 +523,9 @@ async function runCompany(
         `${warningSamples.join("; ")}${warningCount > warningSamples.length ? "; …" : ""}`
       : undefined;
   try {
-    const postings = await fetchCompanyPostings(c, { ...ctx, onWarning });
+    const fetchedPostings = await fetchCompanyPostings(c, { ...ctx, onWarning });
+    await recordVerifiedAtsPollOutcome(c);
+    const postings = filterFocusedPostings(fetchedPostings, opts.companyFocus);
     if (c.system === "githubboard") {
       try {
         await observeCommunityAtsBoards(postings, c.name);
@@ -571,6 +578,12 @@ async function runCompany(
           }`,
       }).reason;
     }
+    // Maintenance bookkeeping must never replace the source's real failure.
+    try {
+      await recordVerifiedAtsPollOutcome(c, e);
+    } catch {
+      // The durable source run above remains the canonical health record.
+    }
   }
   return res;
 }
@@ -596,15 +609,21 @@ export async function runDiscovery(opts?: {
 }): Promise<DiscoveryRunResult> {
   const cycleStartedAt = new Date();
   const onlyEntryLevel = opts?.onlyEntryLevel ?? true;
-  // Public ATS endpoints are shared infrastructure. Two concurrent company
-  // boards plus a small gap between batches keeps broad coverage gentle; a
-  // two-hour discovery interval makes the extra seconds immaterial.
-  const concurrency = opts?.concurrency ?? 2;
-  const pacingMs = process.env.NODE_ENV === "test" ? 0 : 250;
+  // Keep enough independent boards in flight to make broad discovery practical
+  // while retaining a hard ceiling. Individual adapters still apply their own
+  // low detail-page limits, retries and cache policy.
+  const configuredConcurrency =
+    opts?.concurrency ?? Number(process.env.DISCOVERY_API_CONCURRENCY || 8);
+  const concurrency = Math.min(
+    16,
+    Math.max(1, Math.floor(configuredConcurrency || 8)),
+  );
+  const pacingMs = process.env.NODE_ENV === "test" ? 0 : 150;
   const config = opts?.config ?? (await getDiscoveryConfig());
   const ingestOpts: IngestOptions = {
     entryOptions: toEntryLevelOptions(config),
     countries: config.countries,
+    companyFocus: config.companyFocus,
   };
   const ctx: FetchContext = {
     yc: config.yc,
@@ -618,28 +637,30 @@ export async function runDiscovery(opts?: {
   // the same public endpoint to be fetched twice in one run.
   await bootstrapCommunityAtsBoards();
   const expandedCompanies = await verifiedAtsCompanies();
-  if (opts?.validatePendingAts !== false) await validatePendingAtsBoards(ctx);
+  if (opts?.validatePendingAts !== false) {
+    await validatePendingAtsBoards(ctx, { companyFocus: config.companyFocus });
+  }
   const disabled = new Set(config.disabledSources.map((s) => s.toLowerCase()));
   const wanted = opts?.companies?.map((s) => s.toLowerCase());
-  const staticBoardIds = new Set(
-    DISCOVERY_SOURCES.flatMap((source) => {
-      const key = atsCompanyBoardKey(source);
-      return key ? [key] : [];
-    }),
-  );
+  const seenBoardIds = new Set<string>();
   const allSources = [
     ...(opts?.includeStaticSources === false ? [] : DISCOVERY_SOURCES),
-    ...expandedCompanies.filter(
-      (source) => {
-        const key = atsCompanyBoardKey(source);
-        return !key || !staticBoardIds.has(key);
-      },
-    ),
-  ];
+    ...expandedCompanies,
+  ].filter((source) => {
+    const key = atsCompanyBoardKey(source);
+    if (!key) return true;
+    if (seenBoardIds.has(key)) return false;
+    seenBoardIds.add(key);
+    return true;
+  });
+  const AGGREGATORS = ["ycombinator", "watchlist", "githubboard"] as const;
+  const isAggregator = (c: ApiCompany) =>
+    (AGGREGATORS as readonly string[]).includes(c.system);
   const targets = allSources.filter((c) => {
     if (disabled.has(c.name.toLowerCase())) return false;
     if (c.system === "watchlist" && config.watchedCompanies.length === 0) return false;
     if (wanted) return wanted.includes(c.name.toLowerCase());
+    if (!isAggregator(c) && !isCompanyFocused(c.name, config.companyFocus)) return false;
     return true;
   }).map((company) =>
     config.queryTerms.length
@@ -648,31 +669,26 @@ export async function runDiscovery(opts?: {
   );
 
   const results: CompanyRunResult[] = [];
-  // Named company sites first (concurrent batches), then the aggregator sources
+  // Named company sites first (bounded worker pool), then the aggregator sources
   // strictly sequentially: the YC expansion (native company boards) before the
   // GitHub boards. Aggregators re-list roles already found natively, so running
   // them last + one-at-a-time makes cross-source dedup deterministic (each sees
   // every prior insert) and the richer native listing wins.
-  const AGGREGATORS = ["ycombinator", "watchlist", "githubboard"] as const;
-  const isAggregator = (c: ApiCompany) =>
-    (AGGREGATORS as readonly string[]).includes(c.system);
   const companies = targets.filter((c) => !isAggregator(c));
   const aggregators = targets
     .filter(isAggregator)
     .sort((a, b) => AGGREGATORS.indexOf(a.system as never) - AGGREGATORS.indexOf(b.system as never));
 
-  for (let i = 0; i < companies.length; i += concurrency) {
-    const batch = companies.slice(i, i + concurrency);
-    const batchResults = await Promise.all(
-      batch.map((c) => runCompany(c, onlyEntryLevel, ingestOpts, ctx)),
-    );
-    for (const r of batchResults) {
-      results.push(r);
-      opts?.onProgress?.(r);
-    }
-    if (pacingMs > 0 && i + concurrency < companies.length) {
-      await politePause(pacingMs);
-    }
+  const companyResults = await mapPool(companies, concurrency, async (company) => {
+    const result = await runCompany(company, onlyEntryLevel, ingestOpts, ctx);
+    // Pace each worker rather than pausing the entire pool behind its slowest
+    // member. This keeps the pool utilized without producing tight request loops.
+    if (pacingMs > 0) await politePause(pacingMs);
+    opts?.onProgress?.(result);
+    return result;
+  });
+  for (const result of companyResults) {
+    results.push(result);
   }
 
   for (let index = 0; index < aggregators.length; index++) {

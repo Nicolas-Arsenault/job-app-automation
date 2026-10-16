@@ -13,6 +13,7 @@ import { ACTIVE_JOB_WHERE } from "@/lib/jobs/availability";
 import { getDiscoveryScopeCopy } from "@/lib/discovery/scope";
 import { getDiscoveryConfig } from "@/lib/discovery/config";
 import { getDiscoveryCoverageReport } from "@/lib/discovery/coverage";
+import { sourceHealthIssues as summarizeSourceHealth } from "@/lib/discovery/source-health";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export default async function OverviewPage() {
     ...(discoveryConfig.internshipsOnly ? { employmentType: "intern" } : {}),
     ...ACTIVE_JOB_WHERE,
   } as const;
-  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthIssues, atsExpansion, secondaryJobs, directJobs, adapterBacklog, adapterPlatforms, coverage] = await Promise.all([
+  const [scope, usEntry, caEntry, workdayJobs, lastJob, byCompany, allByCompany, sourceHealthRecords, atsExpansion, secondaryJobs, directJobs, adapterBacklog, adapterPlatforms, coverage] = await Promise.all([
     getDiscoveryScopeCopy(),
     prisma.job.count({ where: { ...entryWhere, country: "US" } }),
     prisma.job.count({ where: { ...entryWhere, country: "CA" } }),
@@ -62,18 +63,20 @@ export default async function OverviewPage() {
       _count: { _all: true },
     }),
     prisma.discoverySource.findMany({
-      where: { lastStatus: { in: ["error", "degraded"] } },
       orderBy: { lastRunAt: "desc" },
       select: {
         key: true,
         name: true,
         company: true,
+        system: true,
+        authoritative: true,
+        expectedComplete: true,
         lastStatus: true,
         lastMessage: true,
         lastRunAt: true,
         lastCompleteRunAt: true,
+        lastObservedCount: true,
       },
-      take: 12,
     }),
     prisma.discoveredAtsBoard.groupBy({
       by: ["status"],
@@ -111,6 +114,8 @@ export default async function OverviewPage() {
   const directCoverage = directJobs + secondaryJobs > 0
     ? Math.round((directJobs / (directJobs + secondaryJobs)) * 100)
     : 0;
+  const sourceHealthIssues = summarizeSourceHealth(sourceHealthRecords);
+  const visibleSourceHealthIssues = sourceHealthIssues.slice(0, 12);
 
   const byCategory = new Map<JobCategory, number>();
   for (const row of allByCompany) {
@@ -150,16 +155,23 @@ export default async function OverviewPage() {
         </div>
         {sourceHealthIssues.length > 0 ? (
           <div className="mt-2 space-y-2">
-            {sourceHealthIssues.map((source) => (
+            {visibleSourceHealthIssues.map((source) => (
               <div key={source.key}>
                 <span className="font-medium">{source.company ?? source.name}</span>
                 {` · ${source.lastStatus} · ${timeAgo(source.lastRunAt)}`}
                 {source.lastMessage ? ` — ${source.lastMessage}` : ""}
                 {source.lastCompleteRunAt
                   ? ` · last clean run ${timeAgo(source.lastCompleteRunAt)}`
-                  : " · no clean run recorded"}
+                  : !source.authoritative || !source.expectedComplete
+                    ? " · best-effort source"
+                    : " · no clean run recorded"}
               </div>
             ))}
+            {sourceHealthIssues.length > visibleSourceHealthIssues.length ? (
+              <div className="text-xs opacity-80">
+                Showing the 12 most recent of {sourceHealthIssues.length} employer issues.
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="mt-1 text-xs opacity-80">

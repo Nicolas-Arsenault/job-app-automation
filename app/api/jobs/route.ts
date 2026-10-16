@@ -9,6 +9,7 @@ import {
   parseJobAvailabilityView,
 } from "@/lib/jobs/availability";
 import { getDiscoveryConfig } from "@/lib/discovery/config";
+import { isCompanyFocused } from "@/lib/discovery/company-focus";
 import {
   createGoldenJobMatcher,
   historicalGoldenJobMatch,
@@ -106,7 +107,6 @@ export async function GET(req: NextRequest) {
     include: {
       sightings: { include: { source: sourceSelect } },
     },
-    take: 4000,
   });
 
   // Effective posting time: real postedAt when the ATS gives one, else the
@@ -132,6 +132,7 @@ export async function GET(req: NextRequest) {
   const cutoff = win ? Date.now() - win : 0;
 
   const result = jobs.filter((j) => {
+    if (!isCompanyFocused(j.company, discoveryConfig.companyFocus)) return false;
     if (cutoff && posted(j) < cutoff) return false;
     if (remoteOnly && !j.remote) return false;
     if (sponsorship.length && !sponsorship.includes((j.sponsorship ?? "unknown").toLowerCase())) return false;

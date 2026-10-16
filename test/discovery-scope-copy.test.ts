@@ -14,6 +14,24 @@ describe("discovery scope copy", () => {
     expect(copy.summary).toBe(
       "Open internships matching Software Engineer in United States and Canada. Required experience is capped at 2 years. Roles that require an advanced degree are excluded. Only internships and co-ops are kept.",
     );
+    expect(copy.countryCodes).toEqual(["US", "CA"]);
+    expect(copy.companyNames).toEqual([]);
+  });
+
+  it("explains a focused employer scope", () => {
+    const copy = formatDiscoveryScope({
+      config: {
+        ...DEFAULT_DISCOVERY_CONFIG,
+        countries: ["CA"],
+        companyFocus: ["Shopify", "Nokia", "Coveo"],
+      },
+      criteria: DEFAULT_CRITERIA,
+    });
+
+    expect(copy.countryCodes).toEqual(["CA"]);
+    expect(copy.companyNames).toEqual(["Shopify", "Nokia", "Coveo"]);
+    expect(copy.summary).toContain("in Canada");
+    expect(copy.summary).toContain("Discovery is limited to 3 selected employers.");
   });
 
   it("combines customized target roles, criteria, queries, and role keywords", () => {

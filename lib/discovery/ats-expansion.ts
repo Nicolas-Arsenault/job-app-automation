@@ -2,16 +2,24 @@ import { canonicalCompanyName } from "../company-names";
 import { prisma } from "../db";
 import { createHash } from "node:crypto";
 import { detectAts } from "../sources/normalize";
-import type { ApiCompany } from "./companies";
+import {
+  BROWSER_COMPANIES,
+  DISCOVERY_SOURCES,
+  SCRAPABLE_BROWSER_SYSTEMS,
+  type ApiCompany,
+} from "./companies";
 import type { DiscoveryPosting, FetchContext } from "./adapters";
 import { fetchCompanyPostings } from "./adapters";
+import { isCompanyFocused } from "./company-focus";
+import { describeApiSource } from "./lifecycle";
 import { mapPool, type ResolvedSystem } from "./yc";
 
 export type ExpandableAtsSystem =
   | ResolvedSystem
   | "workable"
   | "teamtailor"
-  | "workday";
+  | "workday"
+  | "oracle";
 
 export interface AtsBoardIdentity {
   system: ExpandableAtsSystem;
@@ -21,6 +29,12 @@ export interface AtsBoardIdentity {
 interface WorkdayBoardIdentity {
   host: string;
   tenant: string;
+  site: string;
+}
+
+interface OracleBoardIdentity {
+  host: string;
+  careerHost: string;
   site: string;
 }
 
@@ -106,10 +120,68 @@ export function atsBoardFromUrl(value: string): AtsBoardIdentity | null {
         token: encodeWorkdayBoard(workday),
       };
     }
+    const oracle = oracleBoardFromUrl(url);
+    if (oracle) {
+      return {
+        system: "oracle",
+        token: encodeOracleBoard(oracle),
+      };
+    }
   }
 
   const token = rawToken ? normalizedToken(rawToken) : null;
   return system && token ? { system, token } : null;
+}
+
+async function atsBoardFromKnownRedirect(value: string): Promise<AtsBoardIdentity | null> {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "grnh.se") return null;
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok ? atsBoardFromUrl(response.url) : null;
+  } catch {
+    return null;
+  }
+}
+
+function encodeOracleBoard(board: OracleBoardIdentity): string {
+  return `${board.host}|${board.careerHost}|${board.site}`;
+}
+
+function decodeOracleBoard(token: string): OracleBoardIdentity | null {
+  const [host, careerHost, site, ...rest] = token.split("|");
+  if (
+    rest.length > 0 ||
+    !host ||
+    !careerHost ||
+    !site ||
+    !/^[a-z0-9.-]+\.oraclecloud\.com$/i.test(host) ||
+    !/^[a-z0-9.-]+$/i.test(careerHost) ||
+    !/^[a-z0-9._-]+$/i.test(site)
+  ) {
+    return null;
+  }
+  return { host: host.toLowerCase(), careerHost: careerHost.toLowerCase(), site };
+}
+
+function oracleBoardFromUrl(url: URL): OracleBoardIdentity | null {
+  const host = url.hostname.toLowerCase();
+  if (!host.endsWith(".oraclecloud.com")) return null;
+  const parts = url.pathname.split("/").filter(Boolean);
+  const sitesIndex = parts.findIndex((part) => part.toLowerCase() === "sites");
+  if (sitesIndex < 0) return null;
+  const site = normalizedWorkdaySegment(parts[sitesIndex + 1] ?? "");
+  if (!site || parts[sitesIndex + 2]?.toLowerCase() !== "job") return null;
+  return { host, careerHost: host, site };
 }
 
 function encodeWorkdayBoard(board: WorkdayBoardIdentity): string {
@@ -244,11 +316,17 @@ async function observeUnsupportedEmployers(
   return candidates.size;
 }
 
-async function resolveSupportedEmployers(postings: DiscoveryPosting[]): Promise<void> {
+async function resolveSupportedEmployers(
+  postings: DiscoveryPosting[],
+  resolvedRedirectCompanies: string[] = [],
+): Promise<void> {
   const keys = [...new Set(
-    postings
-      .filter((posting) => atsBoardFromUrl(posting.applyUrl))
-      .map((posting) => companyCandidateKey(canonicalCompanyName(posting.company))),
+    [
+      ...postings
+        .filter((posting) => atsBoardFromUrl(posting.applyUrl))
+        .map((posting) => posting.company),
+      ...resolvedRedirectCompanies,
+    ].map((company) => companyCandidateKey(canonicalCompanyName(company))),
   )];
   if (!keys.length) return;
   await prisma.communityEmployerCandidate.updateMany({
@@ -261,18 +339,90 @@ async function resolveSupportedEmployers(postings: DiscoveryPosting[]): Promise<
   });
 }
 
+async function resolveCatalogEmployers(): Promise<number> {
+  const automatedNames = [
+    ...DISCOVERY_SOURCES
+      .filter((source) => !["githubboard", "watchlist", "ycombinator"].includes(source.system))
+      .map((source) => source.name),
+    ...BROWSER_COMPANIES
+      .filter((source) => SCRAPABLE_BROWSER_SYSTEMS.includes(source.system))
+      .map((source) => source.name),
+  ];
+  const keys = [...new Set(automatedNames.map(companyCandidateKey))];
+  if (!keys.length) return 0;
+  const result = await prisma.communityEmployerCandidate.updateMany({
+    where: { companyKey: { in: keys }, status: "needs_adapter" },
+    data: {
+      status: "resolved",
+      notes: "Already covered by the built-in automated source catalog",
+      lastSeenAt: new Date(),
+    },
+  });
+  return result.count;
+}
+
+async function resolveVerifiedAtsEmployers(): Promise<number> {
+  const boards = await prisma.discoveredAtsBoard.findMany({
+    where: { status: "verified" },
+    select: { company: true, companyAliases: true },
+  });
+  const names = boards.flatMap((board) => {
+    let parsed: unknown = [];
+    try {
+      parsed = JSON.parse(board.companyAliases);
+    } catch {
+      parsed = [];
+    }
+    return [
+      board.company,
+      ...(Array.isArray(parsed) ? parsed.map(String) : []),
+    ];
+  });
+  const keys = [...new Set(names.filter(Boolean).map(companyCandidateKey))];
+  if (!keys.length) return 0;
+  const result = await prisma.communityEmployerCandidate.updateMany({
+    where: { companyKey: { in: keys }, status: "needs_adapter" },
+    data: {
+      status: "resolved",
+      notes: "Automatically promoted to verified direct ATS monitoring",
+      lastSeenAt: new Date(),
+    },
+  });
+  return result.count;
+}
+
+async function resolveIntegratedCommunitySources(): Promise<number> {
+  const result = await prisma.communityEmployerCandidate.updateMany({
+    where: {
+      status: "needs_adapter",
+      applicationHost: { in: ["www.workatastartup.com", "workatastartup.com"] },
+    },
+    data: {
+      status: "resolved",
+      notes: "Already covered by the Y Combinator community source",
+      lastSeenAt: new Date(),
+    },
+  });
+  return result.count;
+}
+
 export async function observeCommunityAtsBoards(
   postings: DiscoveryPosting[],
   evidenceSource: string,
 ): Promise<number> {
   await observeUnsupportedEmployers(postings, evidenceSource);
-  await resolveSupportedEmployers(postings);
   const candidates = new Map<string, { posting: DiscoveryPosting; board: AtsBoardIdentity }>();
   for (const posting of postings) {
-    const board = atsBoardFromUrl(posting.applyUrl);
+    const board =
+      atsBoardFromUrl(posting.applyUrl) ??
+      await atsBoardFromKnownRedirect(posting.applyUrl);
     if (!board) continue;
     candidates.set(`${board.system}:${board.token.toLowerCase()}`, { posting, board });
   }
+  await resolveSupportedEmployers(
+    postings,
+    [...candidates.values()].map(({ posting }) => posting.company),
+  );
 
   for (const { posting, board } of candidates.values()) {
     const current = await prisma.discoveredAtsBoard.findUnique({
@@ -322,7 +472,7 @@ export async function bootstrapCommunityAtsBoards(limit = 5000): Promise<number>
       postedAt: true,
     },
   });
-  return observeCommunityAtsBoards(
+  const observed = await observeCommunityAtsBoards(
     jobs.map((job) => ({
       ...job,
       location: job.location ?? "",
@@ -335,6 +485,37 @@ export async function bootstrapCommunityAtsBoards(limit = 5000): Promise<number>
     })),
     "existing community inventory",
   );
+  const redirects = await prisma.communityEmployerCandidate.findMany({
+    where: {
+      status: "needs_adapter",
+      applicationHost: "grnh.se",
+    },
+    select: {
+      company: true,
+      exampleTitle: true,
+      exampleApplyUrl: true,
+    },
+  });
+  if (redirects.length) {
+    await observeCommunityAtsBoards(
+      redirects.map((row) => ({
+        company: row.company,
+        title: row.exampleTitle ?? "Internship",
+        location: "",
+        country: "OTHER" as const,
+        applyUrl: row.exampleApplyUrl,
+        externalId: "",
+        description: "",
+        postedAt: null,
+        system: "githubboard" as const,
+      })),
+      "known ATS redirect backlog",
+    );
+  }
+  await resolveCatalogEmployers();
+  await resolveVerifiedAtsEmployers();
+  await resolveIntegratedCommunitySources();
+  return observed;
 }
 
 function asApiCompany(row: {
@@ -349,6 +530,7 @@ function asApiCompany(row: {
       name: row.company,
       method: "api",
       system: "workday",
+      validationOnly,
       countryFilter: "post",
       queryTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
       workday: {
@@ -359,10 +541,24 @@ function asApiCompany(row: {
       },
     };
   }
+  if (row.system === "oracle") {
+    const oracle = decodeOracleBoard(row.token);
+    if (!oracle) throw new Error(`Invalid discovered Oracle identity: ${row.token}`);
+    return {
+      name: row.company,
+      method: "api",
+      system: "oracle",
+      validationOnly,
+      countryFilter: "post",
+      queryTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
+      oracle,
+    };
+  }
   return {
     name: row.company,
     method: "api",
     system: row.system as Exclude<ExpandableAtsSystem, "workday">,
+    validationOnly,
     token: row.token,
     countryFilter: "post",
     queryTerms: ["software engineer", "software developer", "machine learning", "devops"],
@@ -372,6 +568,9 @@ function asApiCompany(row: {
 export function atsCompanyBoardKey(company: ApiCompany): string | null {
   if (company.system === "workday" && company.workday) {
     return `workday:${encodeWorkdayBoard(company.workday).toLowerCase()}`;
+  }
+  if (company.system === "oracle" && company.oracle) {
+    return `oracle:${encodeOracleBoard(company.oracle).toLowerCase()}`;
   }
   return company.token
     ? `${company.system}:${company.token.toLowerCase()}`
@@ -390,10 +589,12 @@ export async function validatePendingAtsBoards(
       postings: DiscoveryPosting[],
     ) => Promise<void>;
     now?: Date;
+    /** Validate only boards belonging to the active employer focus. */
+    companyFocus?: string[];
   } = {},
 ): Promise<{ verified: number; failed: number }> {
   const now = options.now ?? new Date();
-  const rows = await prisma.discoveredAtsBoard.findMany({
+  const candidateRows = await prisma.discoveredAtsBoard.findMany({
     where: {
       status: "pending",
       OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
@@ -402,8 +603,14 @@ export async function validatePendingAtsBoards(
     // New community boards are intentionally admitted slowly. Eight boards per
     // two-hour cycle keeps validation useful without creating a burst across
     // third-party ATS infrastructure.
-    ...(options.limit === null ? {} : { take: options.limit ?? 8 }),
   });
+  const focusedRows = candidateRows.filter((row) =>
+    isCompanyFocused(row.company, options.companyFocus),
+  );
+  const rows =
+    options.limit === null
+      ? focusedRows
+      : focusedRows.slice(0, options.limit ?? 8);
   const validate = options.validate ?? fetchCompanyPostings;
   let verified = 0;
   let failed = 0;
@@ -450,6 +657,71 @@ export async function verifiedAtsCompanies(): Promise<ApiCompany[]> {
   return rows.map((row) => asApiCompany(row));
 }
 
-export async function discoveredAtsBoardCount(): Promise<number> {
-  return prisma.discoveredAtsBoard.count({ where: { status: "verified" } });
+/** Track terminal failures from normal polling, not only initial validation. */
+export async function recordVerifiedAtsPollOutcome(
+  company: ApiCompany,
+  error?: unknown,
+  now = new Date(),
+): Promise<void> {
+  const key = atsCompanyBoardKey(company);
+  if (!key) return;
+  const separator = key.indexOf(":");
+  const system = key.slice(0, separator);
+  const token = key.slice(separator + 1);
+  const rows = await prisma.discoveredAtsBoard.findMany({
+    where: { system, status: { in: ["verified", "pending"] } },
+  });
+  const row = rows.find((candidate) => candidate.token.toLowerCase() === token);
+  if (!row) return;
+
+  if (error === undefined) {
+    if (row.failureCount === 0 && !row.lastError) return;
+    await prisma.discoveredAtsBoard.update({
+      where: { id: row.id },
+      data: { failureCount: 0, lastError: null, nextRetryAt: null, status: "verified" },
+    });
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (!/^HTTP (404|410)\b/.test(message)) return;
+  const failureCount = row.failureCount + 1;
+  await prisma.discoveredAtsBoard.update({
+    where: { id: row.id },
+    data: {
+      failureCount,
+      lastError: message.slice(0, 500),
+      lastValidatedAt: now,
+      ...(failureCount >= 3
+        ? {
+            status: "pending",
+            // Stop hammering a removed board, then gently revalidate it later.
+            nextRetryAt: new Date(now.getTime() + 7 * 24 * 3_600_000),
+          }
+        : {}),
+    },
+  });
+  if (failureCount >= 3) {
+    const descriptor = describeApiSource(company);
+    await prisma.discoverySource.updateMany({
+      where: { key: descriptor.key },
+      data: {
+        lastStatus: "limited",
+        lastMessage:
+          `${message}; learned board paused after ${failureCount} terminal failures; ` +
+          "validation will retry in 7 days",
+      },
+    });
+  }
+}
+
+export async function discoveredAtsBoardCount(companyFocus?: string[]): Promise<number> {
+  if (!companyFocus?.length) {
+    return prisma.discoveredAtsBoard.count({ where: { status: "verified" } });
+  }
+  const rows = await prisma.discoveredAtsBoard.findMany({
+    where: { status: "verified" },
+    select: { company: true },
+  });
+  return rows.filter((row) => isCompanyFocused(row.company, companyFocus)).length;
 }

@@ -8,6 +8,7 @@ import {
   parseJobAvailabilityView,
 } from "@/lib/jobs/availability";
 import { getDiscoveryConfig } from "@/lib/discovery/config";
+import { isCompanyFocused } from "@/lib/discovery/company-focus";
 import {
   createGoldenJobMatcher,
   historicalGoldenJobMatch,
@@ -60,9 +61,11 @@ export async function GET(req: NextRequest) {
   const matchGoldenJob = createGoldenJobMatcher(
     discoveryConfig.goldenJobs,
   );
-  const visibleJobs = discoveryConfig.internshipsOnly
-    ? jobs.filter((job) => job.employmentType === "intern")
-    : jobs;
+  const visibleJobs = jobs.filter(
+    (job) =>
+      (!discoveryConfig.internshipsOnly || job.employmentType === "intern") &&
+      isCompanyFocused(job.company, discoveryConfig.companyFocus),
+  );
 
   const skillCounts = new Map<string, number>();
   const terms = new Map<string, number>();

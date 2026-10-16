@@ -16,6 +16,11 @@ describe("detectAts", () => {
     expect(detectAts("https://acme.wd1.myworkdayjobs.com/careers/job/1")).toBe("workday");
     expect(detectAts("https://careers-acme.icims.com/jobs/1")).toBe("icims");
     expect(detectAts("https://apply.workable.com/j/ABC123")).toBe("workable");
+    expect(
+      detectAts(
+        "https://hdks.fa.ca2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/9341",
+      ),
+    ).toBe("oracle");
     expect(detectAts("https://vention.na.teamtailor.com/jobs/123")).toBe("teamtailor");
     expect(detectAts("https://example.com/careers/1")).toBe("unknown");
     expect(detectAts("not a url")).toBe("unknown");
