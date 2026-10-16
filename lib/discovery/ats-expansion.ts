@@ -153,6 +153,146 @@ async function atsBoardFromKnownRedirect(value: string): Promise<AtsBoardIdentit
   }
 }
 
+/** Extract a Greenhouse board token from a branded careers page. The patterns
+ * deliberately require an official Greenhouse API/embed URL in the returned
+ * markup; `gh_jid` alone identifies a job but not the employer board. */
+export function greenhouseBoardFromHtml(html: string): AtsBoardIdentity | null {
+  const normalized = html
+    .replace(/\\u002f/gi, "/")
+    .replace(/\\\//g, "/")
+    .replace(/&amp;/gi, "&");
+  const patterns = [
+    /boards-api\.greenhouse\.io\/v1\/boards\/([^/"'<>?&\\s]+)\/jobs/i,
+    /job-boards\.greenhouse\.io\/([^/"'<>?&\\s]+)(?:\/jobs|\/embed|[?"'])/i,
+    /boards\.greenhouse\.io\/embed\/(?:job_app|job_board)[^"'<>]*[?&]for=([^&"'<>\\s]+)/i,
+    /["'](?:greenhouseBoardToken|boardToken|board_token)["']\s*:\s*["']([^"']+)["']/i,
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const token = match?.[1] ? normalizedToken(match[1]) : null;
+    if (token) return { system: "greenhouse", token };
+  }
+  return null;
+}
+
+async function fetchBrandedCareerPage(value: string): Promise<string | null> {
+  try {
+    const response = await fetch(value, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(12_000),
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        "user-agent":
+          "Mozilla/5.0 (compatible; RoleoJobDiscovery/1.0; +https://github.com/Nicolas-Arsenault/job-app-automation)",
+      },
+    });
+    return response.ok ? response.text() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function greenhouseBoardExists(board: AtsBoardIdentity): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board.token)}/jobs?content=false`,
+      {
+        signal: AbortSignal.timeout(10_000),
+        headers: { accept: "application/json" },
+      },
+    );
+    if (!response.ok) return false;
+    const value = await response.json() as { jobs?: unknown };
+    return Array.isArray(value.jobs);
+  } catch {
+    return false;
+  }
+}
+
+export async function resolveBrandedGreenhouseBacklog(
+  options: {
+    limit?: number | null;
+    pauseMs?: number;
+    fetchPage?: (url: string) => Promise<string | null>;
+    validateBoard?: (board: AtsBoardIdentity) => Promise<boolean>;
+    unresolvedNote?: string;
+    retryAttempted?: boolean;
+  } = {},
+): Promise<{ attempted: number; resolved: number }> {
+  const rows = await prisma.communityEmployerCandidate.findMany({
+    where: {
+      status: "needs_adapter",
+      exampleApplyUrl: { contains: "gh_jid" },
+    },
+    orderBy: [{ observations: "desc" }, { firstSeenAt: "asc" }],
+  });
+  const eligibleRows = options.retryAttempted
+    ? rows
+    : rows.filter((row) => !row.notes?.startsWith("Branded Greenhouse token was not exposed"));
+  const selected = options.limit === null
+    ? eligibleRows
+    : eligibleRows.slice(0, options.limit ?? 2);
+  const fetchPage = options.fetchPage ?? fetchBrandedCareerPage;
+  const validateBoard = options.validateBoard ?? greenhouseBoardExists;
+  const pauseMs = Math.max(0, options.pauseMs ?? 1_000);
+  let resolved = 0;
+
+  for (let index = 0; index < selected.length; index++) {
+    const row = selected[index];
+    const html = await fetchPage(row.exampleApplyUrl);
+    const extractedBoard = html ? greenhouseBoardFromHtml(html) : null;
+    const board = extractedBoard && await validateBoard(extractedBoard)
+      ? extractedBoard
+      : null;
+    if (board) {
+      const current = await prisma.discoveredAtsBoard.findUnique({
+        where: { system_token: { system: board.system, token: board.token } },
+        select: { companyAliases: true },
+      });
+      await prisma.discoveredAtsBoard.upsert({
+        where: { system_token: { system: board.system, token: board.token } },
+        create: {
+          system: board.system,
+          token: board.token,
+          company: canonicalCompanyName(row.company),
+          companyAliases: aliases("[]", row.company),
+          evidenceUrl: row.exampleApplyUrl,
+          evidenceSource: row.evidenceSource ?? "branded Greenhouse resolver",
+          confidence: 95,
+        },
+        update: {
+          companyAliases: aliases(current?.companyAliases ?? "[]", row.company),
+          evidenceUrl: row.exampleApplyUrl,
+          evidenceSource: row.evidenceSource ?? "branded Greenhouse resolver",
+          lastSeenAt: new Date(),
+        },
+      });
+      await prisma.communityEmployerCandidate.update({
+        where: { companyKey: row.companyKey },
+        data: {
+          status: "resolved",
+          detectedPlatform: "greenhouse",
+          notes: `Resolved branded Greenhouse board (${board.token})`,
+          lastSeenAt: new Date(),
+        },
+      });
+      resolved++;
+    } else {
+      await prisma.communityEmployerCandidate.update({
+        where: { companyKey: row.companyKey },
+        data: {
+          notes: options.unresolvedNote ??
+            "Branded Greenhouse token was not exposed by the public page HTML",
+        },
+      });
+    }
+    if (pauseMs > 0 && index + 1 < selected.length) {
+      await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    }
+  }
+  return { attempted: selected.length, resolved };
+}
+
 function encodeOracleBoard(board: OracleBoardIdentity): string {
   return `${board.host}|${board.careerHost}|${board.site}`;
 }
@@ -515,6 +655,10 @@ export async function bootstrapCommunityAtsBoards(limit = 5000): Promise<number>
   await resolveCatalogEmployers();
   await resolveVerifiedAtsEmployers();
   await resolveIntegratedCommunitySources();
+  // Resolve only a tiny bounded sample per normal refresh. The explicit queue
+  // command can drain the backlog slowly without turning each scrape into a
+  // crawl of company websites.
+  await resolveBrandedGreenhouseBacklog({ limit: 2 });
   return observed;
 }
 

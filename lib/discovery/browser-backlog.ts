@@ -31,7 +31,10 @@ interface BrowserBacklogTarget {
     | "dover"
     | "gem"
     | "yello"
-    | "jibe";
+    | "jibe"
+    | "dayforce"
+    | "applicantpro"
+    | "hrmdirect";
 }
 
 function targetFor(row: {
@@ -125,6 +128,24 @@ function targetFor(row: {
   } else if (host.endsWith(".jibeapply.com") && parts[0] === "jobs") {
     family = "jibe";
     boardUrl = `${url.origin}/jobs`;
+  } else if (
+    host === "jobs.dayforcehcm.com" &&
+    parts.findIndex((part) => part.toLowerCase() === "candidateportal") >= 2
+  ) {
+    const portalIndex = parts.findIndex(
+      (part) => part.toLowerCase() === "candidateportal",
+    );
+    family = "dayforce";
+    boardUrl = `${url.origin}/${parts.slice(0, portalIndex + 1).join("/")}`;
+  } else if (host.endsWith(".applicantpro.com") && parts[0] === "jobs") {
+    family = "applicantpro";
+    boardUrl = `${url.origin}/jobs/`;
+  } else if (
+    host.endsWith(".hrmdirect.com") &&
+    parts[0]?.toLowerCase() === "employment"
+  ) {
+    family = "hrmdirect";
+    boardUrl = `${url.origin}/employment/job-openings.php?search=true`;
   } else {
     return null;
   }
@@ -212,6 +233,9 @@ async function boardLinks(page: Page, target: BrowserBacklogTarget) {
     gem: /\/[^/]+\/(?:am9|job)/i,
     yello: /\/jobs\//i,
     jibe: /\/jobs\/\d+/i,
+    dayforce: /\/candidateportal\/jobs\/\d+/i,
+    applicantpro: /\/jobs\/\d+/i,
+    hrmdirect: /\/employment\/job-opening\.php\?[^#]*\breq=\d+/i,
   }[target.family];
   const links = new Map<string, string>();
   for (const frame of page.frames()) {

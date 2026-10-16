@@ -40,17 +40,40 @@ describe("browser-only ATS backlog", () => {
           applicationHost: "careers.example.com",
           exampleApplyUrl: "https://careers.example.com/jobs/1",
         },
+        {
+          companyKey: "dayforce",
+          company: "Example Dayforce",
+          applicationHost: "jobs.dayforcehcm.com",
+          exampleApplyUrl:
+            "https://jobs.dayforcehcm.com/en-US/example/candidateportal/jobs/2135",
+        },
+        {
+          companyKey: "applicantpro",
+          company: "Example ApplicantPro",
+          applicationHost: "example.applicantpro.com",
+          exampleApplyUrl: "https://example.applicantpro.com/jobs/4115690",
+        },
+        {
+          companyKey: "hrmdirect",
+          company: "Example HRMDirect",
+          applicationHost: "example.hrmdirect.com",
+          exampleApplyUrl:
+            "https://example.hrmdirect.com/employment/job-opening.php?req=3491042",
+        },
       ],
     });
 
     const targets = await browserBacklogTargets();
-    expect(targets).toHaveLength(4);
+    expect(targets).toHaveLength(7);
     expect(targets.map((target) => target.company.searchUrlUS)).toEqual(
       expect.arrayContaining([
         "https://careers-example.icims.com/jobs/search?ss=1&searchKeyword=intern",
         "https://ats.rippling.com/example/jobs",
         "https://ats.rippling.com/localized/jobs",
         "https://careers.example.com/jobs",
+        "https://jobs.dayforcehcm.com/en-US/example/candidateportal",
+        "https://example.applicantpro.com/jobs/",
+        "https://example.hrmdirect.com/employment/job-openings.php?search=true",
       ]),
     );
     expect(targets.every((target) => target.company.system === "browserats")).toBe(true);

@@ -3,12 +3,17 @@ import type { AtsType, NormalizedJob } from "./types";
 
 // Detect the ATS platform from an apply URL hostname.
 export function detectAts(url: string): AtsType {
-  let host = "";
+  let parsed: URL;
   try {
-    host = new URL(url).hostname.toLowerCase();
+    parsed = new URL(url);
   } catch {
     return "unknown";
   }
+  const host = parsed.hostname.toLowerCase();
+  // Many companies render Greenhouse jobs on their own domain. `gh_jid` is
+  // Greenhouse's globally stable job identifier even when the ATS hostname is
+  // hidden behind a branded careers page.
+  if (/^\d+$/.test(parsed.searchParams.get("gh_jid") ?? "")) return "greenhouse";
   if (host.includes("greenhouse.io") || host.includes("grnh.se")) return "greenhouse";
   if (host.includes("lever.co")) return "lever";
   if (host.includes("ashbyhq.com")) return "ashby";
@@ -181,6 +186,15 @@ export function extractExternalId(
       if (match) return match[1];
     } catch {
       // Fall through to a source-provided ID when the URL is malformed.
+    }
+  }
+  if (atsType === "greenhouse") {
+    try {
+      const parsed = new URL(applyUrl);
+      const queryId = parsed.searchParams.get("gh_jid") ?? parsed.searchParams.get("token");
+      if (queryId && /^\d+$/.test(queryId)) return queryId;
+    } catch {
+      // Fall through to the canonical Greenhouse path or source-provided ID.
     }
   }
   if (atsType === "workable") {
