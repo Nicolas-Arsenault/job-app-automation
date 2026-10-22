@@ -87,3 +87,38 @@ export function sourceHealthIssues(
     (a, b) => (b.lastRunAt?.getTime() ?? 0) - (a.lastRunAt?.getTime() ?? 0),
   );
 }
+
+/** Transport/completeness failures that can reduce coverage. Advisory semantic
+ * warnings are deliberately excluded and shown separately by the dashboard. */
+export function sourceCoverageIssues(
+  sources: SourceHealthRecord[],
+): SourceHealthRecord[] {
+  const issues = sourceHealthIssues(
+    sources.map((source) => ({ ...source, lastQualityWarnings: null })),
+  );
+  return issues.filter((issue) => {
+    if (!issue.company || !issue.lastRunAt) return true;
+    // When a catalog entry migrates to another platform, retain the historical
+    // source record but stop reporting its stale failure once the replacement
+    // endpoint has run successfully. A valid zero-row replacement still counts.
+    return !sources.some((alternate) =>
+      alternate.key !== issue.key &&
+      alternate.system !== issue.system &&
+      alternate.company?.trim().toLowerCase() === issue.company!.trim().toLowerCase() &&
+      alternate.lastStatus != null &&
+      COVERING.has(alternate.lastStatus) &&
+      alternate.lastRunAt != null &&
+      alternate.lastRunAt.getTime() >= issue.lastRunAt!.getTime(),
+    );
+  });
+}
+
+export function sourceQualityIssues(
+  sources: SourceHealthRecord[],
+): SourceHealthRecord[] {
+  return sourceHealthIssues(sources).filter(
+    (source) =>
+      parsedQualityWarnings(source).length > 0 &&
+      (!source.lastStatus || !ATTENTION.has(source.lastStatus)),
+  );
+}

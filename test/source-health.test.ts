@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   sourceHealthIssues,
+  sourceCoverageIssues,
+  sourceQualityIssues,
   type SourceHealthRecord,
 } from "../lib/discovery/source-health";
 
@@ -61,5 +63,15 @@ describe("source health summary", () => {
     healthy.lastQualityWarnings = JSON.stringify(["missing posting dates 100% (10/10)"]);
 
     expect(sourceHealthIssues([healthy]).map((issue) => issue.key)).toEqual(["quality"]);
+    expect(sourceCoverageIssues([healthy])).toEqual([]);
+    expect(sourceQualityIssues([healthy]).map((issue) => issue.key)).toEqual(["quality"]);
+  });
+
+  it("suppresses a stale platform after a newer replacement source succeeds", () => {
+    const stale = source("old-greenhouse", "HubSpot", "error", 0, 132);
+    const replacement = source("new-ripplematch", "HubSpot", "limited", 5, 0);
+    replacement.system = "ripplematch";
+
+    expect(sourceCoverageIssues([stale, replacement])).toEqual([]);
   });
 });

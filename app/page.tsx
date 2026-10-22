@@ -15,7 +15,8 @@ import { getDiscoveryConfig } from "@/lib/discovery/config";
 import { getDiscoveryCoverageReport } from "@/lib/discovery/coverage";
 import {
   parsedQualityWarnings,
-  sourceHealthIssues as summarizeSourceHealth,
+  sourceCoverageIssues,
+  sourceQualityIssues,
 } from "@/lib/discovery/source-health";
 
 export const dynamic = "force-dynamic";
@@ -119,8 +120,9 @@ export default async function OverviewPage() {
   const directCoverage = directJobs + secondaryJobs > 0
     ? Math.round((directJobs / (directJobs + secondaryJobs)) * 100)
     : 0;
-  const sourceHealthIssues = summarizeSourceHealth(sourceHealthRecords);
+  const sourceHealthIssues = sourceCoverageIssues(sourceHealthRecords);
   const visibleSourceHealthIssues = sourceHealthIssues.slice(0, 12);
+  const qualityIssues = sourceQualityIssues(sourceHealthRecords);
 
   const byCategory = new Map<JobCategory, number>();
   for (const row of allByCompany) {
@@ -187,6 +189,20 @@ export default async function OverviewPage() {
           </div>
         )}
       </div>
+
+      {qualityIssues.length > 0 ? (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+          <div className="font-semibold">Source quality notes: {qualityIssues.length}</div>
+          <div className="mt-2 space-y-1">
+            {qualityIssues.slice(0, 8).map((source) => (
+              <div key={source.key}>
+                <span className="font-medium">{source.company ?? source.name}</span>
+                {` · ${timeAgo(source.lastRunAt)} · ${parsedQualityWarnings(source).join("; ")}`}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <Stat label="US queue" value={usEntry} hint="open roles" />

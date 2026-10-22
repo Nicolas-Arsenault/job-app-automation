@@ -516,6 +516,7 @@ async function runCompany(
   let rawRows = 0;
   let validRows = 0;
   const warningSamples: string[] = [];
+  const qualityWarningSamples: string[] = [];
   const onWarning = (message: string) => {
     warningCount++;
     if (warningSamples.length < 3) {
@@ -528,10 +529,17 @@ async function runCompany(
       ? `${warningCount} non-fatal subrequest warning${warningCount === 1 ? "" : "s"}: ` +
         `${warningSamples.join("; ")}${warningCount > warningSamples.length ? "; …" : ""}`
       : undefined;
+  const onQualityWarning = (message: string) => {
+    if (qualityWarningSamples.length < 8) {
+      qualityWarningSamples.push(message.trim().slice(0, 240));
+    }
+    ctx.onQualityWarning?.(message);
+  };
   try {
     const fetchedPostings = await fetchCompanyPostings(c, {
       ...ctx,
       onWarning,
+      onQualityWarning,
       onRowsParsed: (raw, valid) => {
         rawRows += raw;
         validRows += valid;
@@ -564,6 +572,7 @@ async function runCompany(
       {
         rows: postings,
         ...(rawRows > 0 ? { rawRows, validRows } : {}),
+        externalWarnings: qualityWarningSamples,
       },
     );
     res.sourceRunId = completed.runId;

@@ -53,6 +53,10 @@ interface ScrapeUrlResult {
   warning?: string;
 }
 
+export function resolveBrowserHref(origin: string, href: string): string {
+  return new URL(href, origin).toString();
+}
+
 // Generic DOM harvester: collect anchors whose href matches `pattern`, using the
 // anchor's text as the title and (optionally) a sibling for a posted date.
 function anchorHarvest(pattern: RegExp) {
@@ -168,7 +172,7 @@ const RULES: Partial<Record<BrowserSystem, SiteRule>> = {
       // Only likely software internships receive a detail request. Requests are
       // sequential and spaced out so one opening adds at most one gentle fetch.
       await page.waitForTimeout(3_000 + Math.floor(Math.random() * 2_001));
-      await page.goto(card.href, {
+      await page.goto(resolveBrowserHref("https://jobs.uber.com", card.href), {
         waitUntil: "domcontentloaded",
         timeout: 45_000,
       });
@@ -315,7 +319,7 @@ async function scrapeUrl(
   for (const c of all) {
     // Real titles are short; anything long is concatenated card noise — drop it.
     if (c.title.length > 90) continue;
-    const applyUrl = c.href.startsWith("http") ? c.href : rule.origin + c.href;
+    const applyUrl = resolveBrowserHref(rule.origin, c.href);
     if (seen.has(applyUrl)) continue;
     seen.add(applyUrl);
     out.push({

@@ -126,6 +126,12 @@ function requireValidPostingRows<T>(
   return validRows;
 }
 
+function reportQualityWarning(ctx: FetchContext, warning: string) {
+  // Full discovery runs provide the dedicated callback. Direct adapter calls
+  // and older integrations can still receive the warning through onWarning.
+  (ctx.onQualityWarning ?? ctx.onWarning)?.(warning);
+}
+
 // Best-effort HTML fetch used by the YC ATS resolver. Missing pages yield an
 // empty result; transient blocks throw so the resolver retries them next run.
 async function fetchText(url: string, timeoutMs = 8000): Promise<string> {
@@ -292,8 +298,11 @@ function primarySearchTerm(c: ApiCompany, ctx: FetchContext): string {
 // --------------------------------- Greenhouse ---------------------------------
 
 async function greenhouse(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
+  const compact = c.token === "andurilindustries";
   const data = (await fetchJson(
-    `https://boards-api.greenhouse.io/v1/boards/${c.token}/jobs?content=true`,
+    `https://boards-api.greenhouse.io/v1/boards/${c.token}/jobs?content=${compact ? "false" : "true"}`,
+    {},
+    compact ? 90_000 : 20_000,
   )) as {
     jobs?: {
       id?: number;
@@ -315,10 +324,39 @@ async function greenhouse(c: ApiCompany, ctx: FetchContext = {}): Promise<Discov
       Number.isFinite(job?.id) &&
       isNonEmptyString(job?.title) &&
       isHttpUrl(job?.absolute_url),
-    ctx.onWarning,
+    ctx.onQualityWarning ?? ctx.onWarning,
     ctx.onRowsParsed,
   );
-  return jobs.map((j) => {
+  const details = new Map<string, (typeof jobs)[number]>();
+  if (compact) {
+    const candidates = jobs.filter((job) =>
+      /\b(?:intern(?:ship)?|co-?op|student)\b/i.test(job.title ?? "") &&
+      isSoftwareRole(job.title ?? "") &&
+      ["US", "CA"].includes(classifyCountry([
+        job.location?.name,
+        ...(job.offices ?? []).map((office) => office.location || office.name),
+      ].filter(Boolean).join(" | "))),
+    );
+    await mapPool(candidates, 2, async (job) => {
+      if (process.env.NODE_ENV !== "test") await wait(300 + Math.floor(Math.random() * 301));
+      try {
+        const detail = await fetchJson(
+          `https://boards-api.greenhouse.io/v1/boards/${c.token}/jobs/${job.id}`,
+          {},
+          20_000,
+        ) as (typeof jobs)[number];
+        details.set(String(job.id), detail);
+      } catch (error) {
+        reportQualityWarning(
+          ctx,
+          `${c.name} Greenhouse detail unavailable for ${job.id}; using compact list data (` +
+            `${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
+    });
+  }
+  return jobs.map((summary) => {
+    const j = details.get(String(summary.id)) ?? summary;
     const offices = (j.offices ?? []).map((o) => o.location || o.name).filter(Boolean).join(" | ");
     const location = [j.location?.name, offices].filter(Boolean).join(" | ");
     return mk("greenhouse", c.name, {
@@ -363,7 +401,7 @@ async function ashby(
       isNonEmptyString(job?.id) &&
       isNonEmptyString(job?.title) &&
       (isHttpUrl(job?.applyUrl) || isHttpUrl(job?.jobUrl)),
-    ctx.onWarning,
+    ctx.onQualityWarning ?? ctx.onWarning,
     ctx.onRowsParsed,
   );
   return jobs.map((j) =>
@@ -384,6 +422,8 @@ async function ashby(
 async function lever(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
   const data = (await fetchJson(
     `https://api.lever.co/v0/postings/${c.token}?mode=json`,
+    {},
+    45_000,
   )) as {
     id?: string;
     text?: string;
@@ -730,7 +770,7 @@ async function netflix(
       `Netflix detail unavailable for ${detailFailures} posting` +
       `${detailFailures === 1 ? "" : "s"}; using list data`;
     console.warn(`[discovery] ${warning}`);
-    ctx.onWarning?.(warning);
+    reportQualityWarning(ctx, warning);
   }
 
   return hydrated.map((job) => ({
@@ -1024,7 +1064,7 @@ async function eightfold(
         `${c.name} Eightfold detail unavailable for ${id}; using list data (` +
         `${error instanceof Error ? error.message : String(error)})`;
       console.warn(`[discovery] ${warning}`);
-      ctx.onWarning?.(warning);
+      reportQualityWarning(ctx, warning);
       return fallback();
     }
   });
@@ -1153,7 +1193,7 @@ async function oracle(
         `${c.name} Oracle detail unavailable for ${id}; using list data (` +
         `${error instanceof Error ? error.message : String(error)})`;
       console.warn(`[discovery] ${warning}`);
-      ctx.onWarning?.(warning);
+      reportQualityWarning(ctx, warning);
       return fallback();
     }
   });
@@ -1179,18 +1219,34 @@ async function workday(
   const searches = ctx.internshipsOnly && !w.appliedFacets
     ? (w.searchTerms ?? INTERNSHIP_SEARCH_TERMS)
     : configuredSearches;
-  for (const searchText of searches) {
+  let listRequests = 0;
+  searchLoop: for (const searchText of searches) {
     for (let offset = 0; offset < (c.validationOnly ? 20 : 100); offset += 20) {
-      const data = (await fetchJson(`https://${w.host}/wday/cxs/${w.tenant}/${w.site}/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          appliedFacets: w.appliedFacets ?? {},
-          limit: 20,
-          offset,
-          searchText,
-        }),
-      })) as { jobPostings?: WorkdayListRow[] };
+      if (process.env.NODE_ENV !== "test" && listRequests > 0) {
+        await wait(250 + Math.floor(Math.random() * 251));
+      }
+      listRequests++;
+      let data: { jobPostings?: WorkdayListRow[] };
+      try {
+        data = (await fetchJson(`https://${w.host}/wday/cxs/${w.tenant}/${w.site}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            appliedFacets: w.appliedFacets ?? {},
+            limit: 20,
+            offset,
+            searchText,
+          }),
+        })) as typeof data;
+      } catch (error) {
+        if (rows.size === 0) throw error;
+        ctx.onWarning?.(
+          `${c.name} Workday pagination stopped after ${rows.size} postings: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        break searchLoop;
+      }
       const jobs = data.jobPostings ?? [];
       for (const j of jobs) {
         const key = j.bulletFields?.[0] ?? j.externalPath ?? "";
@@ -1219,7 +1275,8 @@ async function workday(
     if (
       !w.fetchDescriptions ||
       !j.externalPath ||
-      !isSoftwareRole(title)
+      !isSoftwareRole(title) ||
+      (ctx.internshipsOnly && !/\b(?:intern(?:ship)?|co-?op|student)\b/i.test(title))
     ) {
       return listPosting();
     }
@@ -1248,14 +1305,14 @@ async function workday(
         `${c.name} Workday detail unavailable for ${j.externalPath}; ` +
         `using list data (${reason})`;
       console.warn(`[discovery] ${warning}`);
-      ctx.onWarning?.(warning);
+      reportQualityWarning(ctx, warning);
       return listPosting();
     }
     if (!data.jobPostingInfo) {
       const warning =
         `${c.name} Workday detail missing for ${j.externalPath}; using list data`;
       console.warn(`[discovery] ${warning}`);
-      ctx.onWarning?.(warning);
+      reportQualityWarning(ctx, warning);
       return listPosting();
     }
     const detail = data.jobPostingInfo;
@@ -1341,12 +1398,15 @@ async function microsoft(
     return fetchJson(url);
   };
 
-  for (const location of ["United States", "Canada"] as const) {
-    for (let start = 0; start < 400; start += 10) {
+  // One timestamp-sorted page per country is enough for a two-hour freshness
+  // monitor and avoids the pagination burst that repeatedly triggers 429s.
+  // Canada goes first so it cannot be starved behind a large US result set.
+  for (const location of ["Canada", "United States"] as const) {
+    for (const start of [0]) {
       const url =
         `${base}/api/pcsx/search?domain=microsoft.com` +
         `&query=${encodeURIComponent(q)}&location=${encodeURIComponent(location)}` +
-        `&start=${start}&sort_by=relevance`;
+        `&start=${start}&sort_by=timestamp`;
       let data: {
         data?: {
           count?: number;
@@ -1390,11 +1450,47 @@ async function microsoft(
           }),
         );
       }
-      const total = Number(data.data?.count ?? 0);
-      if (positions.length < 10 || start + 10 >= total) break;
     }
   }
   return out;
+}
+
+// -------------------------------- RippleMatch --------------------------------
+// HubSpot's official careers page now sends emerging-talent candidates to its
+// public RippleMatch company page. Its former Greenhouse board returns 404.
+
+async function ripplematch(c: ApiCompany, ctx: FetchContext = {}): Promise<DiscoveryPosting[]> {
+  if (!c.ripplematch) throw new Error("RippleMatch source requires company metadata");
+  const rows = await fetchJson(
+    `https://app.ripplematch.com/api/v2/public/roles/${c.ripplematch.companyId}`,
+    {
+      headers: {
+        Referer: `https://app.ripplematch.com/v2/public/company/${c.ripplematch.companySlug}`,
+      },
+    },
+  ) as {
+    public_id?: string;
+    name?: string;
+    formatted_locations?: string;
+    job_type?: string;
+    start_date?: string;
+  }[];
+  if (!Array.isArray(rows)) throw new Error("RippleMatch response was not an array");
+  const jobs = requireValidPostingRows(
+    "RippleMatch",
+    rows,
+    (row) => isNonEmptyString(row.public_id) && isNonEmptyString(row.name),
+    ctx.onQualityWarning ?? ctx.onWarning,
+    ctx.onRowsParsed,
+  );
+  return jobs.map((row) => mk("ripplematch", c.name, {
+    title: row.name ?? "",
+    location: row.formatted_locations ?? "",
+    applyUrl: `https://app.ripplematch.com/v2/public/job/${row.public_id}`,
+    externalId: row.public_id ?? "",
+    description: row.job_type ? `Employment type: ${row.job_type}.` : "",
+    postedAt: toDate(row.start_date),
+  }));
 }
 
 // ---------------------------------- TalentBrew ----------------------------------
@@ -1871,6 +1967,7 @@ const FETCHERS: Record<
   spotify,
   talentbrew,
   microsoft,
+  ripplematch,
   githubboard: githubBoard,
   workday,
 };
@@ -1883,6 +1980,8 @@ export interface FetchContext {
   internshipsOnly?: boolean;
   watchedCompanies?: WatchedCompany[];
   onWarning?: (message: string) => void;
+  /** Advisory data/enrichment warning that must not invalidate usable rows. */
+  onQualityWarning?: (message: string) => void;
   /** Adapter-level raw/valid row counts for semantic quality telemetry. */
   onRowsParsed?: (rawRows: number, validRows: number) => void;
 }
@@ -1908,7 +2007,8 @@ async function watchlist(c: ApiCompany, ctx: FetchContext): Promise<DiscoveryPos
     fetchText: (url) => fetchText(url, 8000),
     concurrency: Math.min(2, Math.max(1, companies.length)),
     onProbeFailure: (company, error) =>
-      ctx.onWarning?.(
+      reportQualityWarning(
+        ctx,
         `Watchlist ATS discovery unavailable for ${company.name}: ${
           error instanceof Error ? error.message : String(error)
         }`,
@@ -1927,6 +2027,16 @@ async function watchlist(c: ApiCompany, ctx: FetchContext): Promise<DiscoveryPos
     try {
       return await FETCHERS[board.system](synthetic, ctx);
     } catch (error) {
+      if (error instanceof FetchHttpError && [404, 410].includes(error.status)) {
+        await prisma.ycAtsCache.deleteMany({
+          where: { slug: board.slug, system: board.system, token: board.token },
+        });
+        reportQualityWarning(
+          ctx,
+          `Watchlist board ${board.name} (${board.system}) was retired; queued for rediscovery`,
+        );
+        return [];
+      }
       ctx.onWarning?.(
         `Watchlist board ${board.name} (${board.system}) failed: ${
           error instanceof Error ? error.message : String(error)

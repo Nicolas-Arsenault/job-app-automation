@@ -798,10 +798,10 @@ function asApiCompany(row: {
       system: "workday",
       validationOnly,
       countryFilter: "post",
-      queryTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
+      queryTerms: validationOnly ? ["intern"] : ["intern", "co-op"],
       workday: {
         ...workday,
-        searchTerms: validationOnly ? ["intern"] : ["intern", "co-op", "student"],
+        searchTerms: validationOnly ? ["intern"] : ["intern", "co-op"],
         fetchDescriptions: !validationOnly,
         detailConcurrency: 2,
       },
@@ -961,6 +961,30 @@ export async function recordVerifiedAtsPollOutcome(
   }
 
   const message = error instanceof Error ? error.message : String(error);
+  if (/^HTTP 429\b/.test(message)) {
+    const retryHours = 6;
+    await prisma.discoveredAtsBoard.update({
+      where: { id: row.id },
+      data: {
+        status: "pending",
+        failureCount: row.failureCount + 1,
+        lastError: message.slice(0, 500),
+        lastValidatedAt: now,
+        nextRetryAt: new Date(now.getTime() + retryHours * 3_600_000),
+      },
+    });
+    const descriptor = describeApiSource(company);
+    await prisma.discoverySource.updateMany({
+      where: { key: descriptor.key },
+      data: {
+        lastStatus: "limited",
+        lastMessage:
+          `${message}; learned board paused for ${retryHours} hours to protect the source; ` +
+          "previous inventory retained",
+      },
+    });
+    return;
+  }
   if (!/^HTTP (404|410)\b/.test(message)) return;
   const failureCount = row.failureCount + 1;
   await prisma.discoveredAtsBoard.update({

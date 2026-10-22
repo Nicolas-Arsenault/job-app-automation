@@ -194,8 +194,27 @@ function date(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+async function gotoWithTransientRetry(
+  page: Page,
+  url: string,
+  options: { waitUntil: "commit" | "domcontentloaded"; timeout: number },
+) {
+  try {
+    return await page.goto(url, options);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/ERR_NETWORK_IO_SUSPENDED|ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED/i.test(message)) {
+      throw error;
+    }
+    // A laptop wake or network transition can suspend one navigation. Retry
+    // once after a short pause; persistent failures still surface normally.
+    await page.waitForTimeout(2_000);
+    return page.goto(url, options);
+  }
+}
+
 async function boardLinks(page: Page, target: BrowserBacklogTarget) {
-  const response = await page.goto(target.company.searchUrlUS, {
+  const response = await gotoWithTransientRetry(page, target.company.searchUrlUS, {
     // Legacy Taleo pages can keep the DOMContentLoaded lifecycle pending while
     // their search shell is already usable. Waiting for the first response is
     // enough; the bounded pause below still gives the markup time to render.
@@ -276,7 +295,7 @@ async function hydrate(
   company: string,
   link: { href: string; title: string; context: string },
 ): Promise<DiscoveryPosting> {
-  const response = await page.goto(link.href, {
+  const response = await gotoWithTransientRetry(page, link.href, {
     waitUntil: "domcontentloaded",
     timeout: 30_000,
   });

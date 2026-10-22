@@ -339,6 +339,26 @@ describe("automatic ATS expansion", () => {
     });
   });
 
+  it("pauses a rate-limited learned board before the next validation probe", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://jobs.ashbyhq.com/acme/abc")],
+      "Community A",
+    );
+    await validatePendingAtsBoards({}, { concurrency: 1, validate: async () => [] });
+    const [company] = await verifiedAtsCompanies();
+    const now = new Date("2026-10-15T12:00:00Z");
+
+    await recordVerifiedAtsPollOutcome(company, new Error("HTTP 429"), now);
+
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      status: "pending",
+      failureCount: 1,
+      lastError: "HTTP 429",
+      nextRetryAt: new Date("2026-10-15T18:00:00Z"),
+    });
+    expect(await verifiedAtsCompanies()).toEqual([]);
+  });
+
   it("turns discovered Workday configuration into a pollable source", async () => {
     await observeCommunityAtsBoards(
       [posting("https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Toronto/Intern_R123")],

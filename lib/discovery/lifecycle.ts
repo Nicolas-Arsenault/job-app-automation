@@ -271,6 +271,8 @@ export function describeApiSource(company: ApiCompany): DiscoverySourceDescripto
         ? `${company.eightfold.host}/${company.eightfold.domain}`
         : company.oracle
           ? `${company.oracle.host}/${company.oracle.site}`
+          : company.ripplematch
+            ? `${company.ripplematch.companyId}/${company.ripplematch.companySlug}`
           : company.yc?.directoryUrl ?? company.token ?? company.name;
   const authoritative = AUTHORITATIVE_SYSTEMS.has(company.system);
   const aggregator = company.system === "githubboard";

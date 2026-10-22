@@ -10,6 +10,7 @@ export interface SourceQualityInput {
   rawRows?: number;
   validRows?: number;
   browser?: boolean;
+  externalWarnings?: string[];
 }
 
 export interface SourceQualityMetrics {
@@ -86,7 +87,7 @@ export function evaluateSourceQuality(
     previousObservedCount,
   };
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...new Set(input.externalWarnings ?? [])];
   if (rawRows >= 4 && metrics.validRowPercent < 0.98) {
     warnings.push(
       `valid-row rate ${Math.round(metrics.validRowPercent * 100)}% (${validRows}/${rawRows})`,

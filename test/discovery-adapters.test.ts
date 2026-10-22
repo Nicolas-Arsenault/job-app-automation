@@ -69,6 +69,76 @@ describe("curated Greenhouse and Ashby career sources", () => {
   );
 });
 
+describe("large Greenhouse boards", () => {
+  it("uses the compact Anduril feed and hydrates only relevant North American internships", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("jobs?content=false")) {
+        return jsonResponse({ jobs: [
+          {
+            id: 1,
+            title: "2027 Flight Software Engineer Intern",
+            absolute_url: "https://job-boards.greenhouse.io/andurilindustries/jobs/1",
+            location: { name: "Costa Mesa, California, United States" },
+            updated_at: "2026-10-16T12:00:00Z",
+          },
+          {
+            id: 2,
+            title: "Senior Software Engineer",
+            absolute_url: "https://job-boards.greenhouse.io/andurilindustries/jobs/2",
+            location: { name: "Costa Mesa, California, United States" },
+          },
+        ] });
+      }
+      if (url.endsWith("/jobs/1")) {
+        return jsonResponse({
+          id: 1,
+          title: "2027 Flight Software Engineer Intern",
+          absolute_url: "https://job-boards.greenhouse.io/andurilindustries/jobs/1",
+          location: { name: "Costa Mesa, California, United States" },
+          content: "<p>Build flight software.</p>",
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const posts = await fetchCompanyPostings({
+      name: "Anduril",
+      method: "api",
+      system: "greenhouse",
+      token: "andurilindustries",
+      countryFilter: "post",
+      queryTerms: ["software engineer"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(posts.find((post) => post.externalId === "1")?.description).toBe("Build flight software.");
+  });
+});
+
+describe("RippleMatch adapter", () => {
+  it("maps HubSpot's official early-career roles feed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse([{
+      public_id: "role-1",
+      name: "Software Engineering Intern",
+      formatted_locations: "Cambridge, MA, USA",
+      job_type: "Internship",
+    }])));
+    const company = API_COMPANIES.find((candidate) => candidate.name === "HubSpot")!;
+
+    const posts = await fetchCompanyPostings(company);
+
+    expect(company.system).toBe("ripplematch");
+    expect(posts).toMatchObject([{
+      externalId: "role-1",
+      system: "ripplematch",
+      country: "US",
+      applyUrl: "https://app.ripplematch.com/v2/public/job/role-1",
+    }]);
+  });
+});
+
 describe("Canada-first ATS adapters", () => {
   it("supports Teamtailor custom career domains", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ items: [] }));
@@ -233,6 +303,11 @@ describe("microsoft adapter (pcsx)", () => {
     expect(ca.system).toBe("microsoft");
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("query=intern"),
+      expect.anything(),
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("sort_by=timestamp"),
       expect.anything(),
     );
   });
@@ -1387,12 +1462,51 @@ describe("Workday adapter details", () => {
       expect.stringContaining("Workday detail unavailable for /job/software-engineer-ii"),
     );
   });
+
+  it("keeps partial list results when later Workday pagination is rate limited", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      calls++;
+      if (calls === 1) {
+        return jsonResponse({
+          jobPostings: Array.from({ length: 20 }, (_, index) => ({
+            title: `Software Engineering Intern ${index}`,
+            externalPath: `/job/intern-${index}`,
+            locationsText: "Toronto, Ontario, Canada",
+            bulletFields: [`R${index}`],
+          })),
+        });
+      }
+      return new Response("", { status: 429 });
+    }));
+    const onWarning = vi.fn();
+
+    const posts = await fetchCompanyPostings({
+      name: "Acme",
+      method: "api",
+      system: "workday",
+      countryFilter: "post",
+      queryTerms: ["intern"],
+      workday: {
+        host: "acme.wd5.myworkdayjobs.com",
+        tenant: "acme",
+        site: "Acme",
+        searchTerms: ["intern"],
+      },
+    }, { internshipsOnly: true, onWarning });
+
+    expect(posts).toHaveLength(20);
+    expect(onWarning).toHaveBeenCalledWith(
+      expect.stringContaining("Workday pagination stopped after 20 postings: HTTP 429"),
+    );
+  });
 });
 
 describe("discovery catalog", () => {
   it("registers the newly added companies with the expected system", () => {
     const bySystem = (name: string) => API_COMPANIES.find((c) => c.name === name)?.system;
     expect(bySystem("Microsoft")).toBe("microsoft");
+    expect(bySystem("Old Mission Capital")).toBe("ashby");
     expect(bySystem("Nuro")).toBe("greenhouse");
     expect(bySystem("Baseten")).toBe("ashby");
     expect(bySystem("DRW")).toBe("greenhouse");
