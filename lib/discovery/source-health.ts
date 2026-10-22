@@ -7,6 +7,8 @@ export interface SourceHealthRecord {
   expectedComplete: boolean;
   lastStatus: string | null;
   lastMessage: string | null;
+  lastQualityMetrics: string | null;
+  lastQualityWarnings: string | null;
   lastRunAt: Date | null;
   lastCompleteRunAt: Date | null;
   lastObservedCount: number | null;
@@ -22,6 +24,16 @@ function identity(source: SourceHealthRecord): string {
 
 function severity(source: SourceHealthRecord): number {
   return source.lastStatus === "error" ? 2 : 1;
+}
+
+export function parsedQualityWarnings(source: SourceHealthRecord): string[] {
+  if (!source.lastQualityWarnings) return [];
+  try {
+    const parsed = JSON.parse(source.lastQualityWarnings) as unknown;
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [source.lastQualityWarnings];
+  }
 }
 
 /**
@@ -45,6 +57,7 @@ export function sourceHealthIssues(
   }
 
   const uncovered = sources.filter((source) => {
+    if (parsedQualityWarnings(source).length > 0) return true;
     if (!source.lastStatus || !ATTENTION.has(source.lastStatus)) return false;
     if (!source.company || !source.lastRunAt) return true;
     return !(healthyAlternates.get(identity(source)) ?? []).some(
@@ -72,5 +85,40 @@ export function sourceHealthIssues(
 
   return [...byEmployer.values()].sort(
     (a, b) => (b.lastRunAt?.getTime() ?? 0) - (a.lastRunAt?.getTime() ?? 0),
+  );
+}
+
+/** Transport/completeness failures that can reduce coverage. Advisory semantic
+ * warnings are deliberately excluded and shown separately by the dashboard. */
+export function sourceCoverageIssues(
+  sources: SourceHealthRecord[],
+): SourceHealthRecord[] {
+  const issues = sourceHealthIssues(
+    sources.map((source) => ({ ...source, lastQualityWarnings: null })),
+  );
+  return issues.filter((issue) => {
+    if (!issue.company || !issue.lastRunAt) return true;
+    // When a catalog entry migrates to another platform, retain the historical
+    // source record but stop reporting its stale failure once the replacement
+    // endpoint has run successfully. A valid zero-row replacement still counts.
+    return !sources.some((alternate) =>
+      alternate.key !== issue.key &&
+      alternate.system !== issue.system &&
+      alternate.company?.trim().toLowerCase() === issue.company!.trim().toLowerCase() &&
+      alternate.lastStatus != null &&
+      COVERING.has(alternate.lastStatus) &&
+      alternate.lastRunAt != null &&
+      alternate.lastRunAt.getTime() >= issue.lastRunAt!.getTime(),
+    );
+  });
+}
+
+export function sourceQualityIssues(
+  sources: SourceHealthRecord[],
+): SourceHealthRecord[] {
+  return sourceHealthIssues(sources).filter(
+    (source) =>
+      parsedQualityWarnings(source).length > 0 &&
+      (!source.lastStatus || !ATTENTION.has(source.lastStatus)),
   );
 }

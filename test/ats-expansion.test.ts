@@ -3,8 +3,12 @@ import { prisma } from "../lib/db";
 import {
   atsBoardFromUrl,
   bootstrapCommunityAtsBoards,
+  greenhouseBoardFromHtml,
+  greenhouseBoardFromNetworkUrls,
   observeCommunityAtsBoards,
   recordVerifiedAtsPollOutcome,
+  resolveBrandedGreenhouseBacklog,
+  resolveSharedCareerApiBacklog,
   validatePendingAtsBoards,
   verifiedAtsCompanies,
 } from "../lib/discovery/ats-expansion";
@@ -69,6 +73,17 @@ describe("automatic ATS expansion", () => {
     ).toEqual({ system: "lever", token: "acme" });
   });
 
+  it("extracts ADP Workforce Now client identities", () => {
+    expect(
+      atsBoardFromUrl(
+        "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=b156e713-5801-4c36-bb62-a62f3bc9844f&jobId=547656",
+      ),
+    ).toEqual({
+      system: "adp",
+      token: "b156e713-5801-4c36-bb62-a62f3bc9844f",
+    });
+  });
+
   it("extracts Oracle Recruiting Candidate Experience board identities", () => {
     expect(
       atsBoardFromUrl(
@@ -86,6 +101,115 @@ describe("automatic ATS expansion", () => {
         "https://boards.greenhouse.io/embed/job_app?for=acme&gh_jid=12345",
       ),
     ).toEqual({ system: "greenhouse", token: "acme" });
+  });
+
+  it("extracts Greenhouse board tokens hidden in branded page markup", () => {
+    expect(
+      greenhouseBoardFromHtml(
+        `<script>const url = 'https:\\/\\/boards-api.greenhouse.io\\/v1\\/boards\\/ixllearning\\/jobs\\/8765770002';</script>`,
+      ),
+    ).toEqual({ system: "greenhouse", token: "ixllearning" });
+    expect(
+      greenhouseBoardFromHtml(
+        `<iframe src="https://boards.greenhouse.io/embed/job_app?for=acme&amp;token=123"></iframe>`,
+      ),
+    ).toEqual({ system: "greenhouse", token: "acme" });
+    expect(greenhouseBoardFromHtml(`<div data-board="not-a-vendor-url"></div>`)).toBeNull();
+  });
+
+  it("extracts Greenhouse boards revealed only by rendered network traffic", () => {
+    expect(greenhouseBoardFromNetworkUrls([
+      "https://careers.acme.test/assets/app.js",
+      "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true",
+    ])).toEqual({ system: "greenhouse", token: "acme" });
+  });
+
+  it("promotes branded Greenhouse candidates into the supported ATS queue", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://careers.acme.test/openings?gh_jid=12345", "Acme")],
+      "Community A",
+    );
+
+    const result = await resolveBrandedGreenhouseBacklog({
+      limit: null,
+      pauseMs: 0,
+      fetchPage: async () =>
+        `<script src="https://boards-api.greenhouse.io/v1/boards/acme/jobs/12345"></script>`,
+      validateBoard: async () => true,
+    });
+
+    expect(result).toEqual({ attempted: 1, resolved: 1 });
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      company: "Acme",
+      system: "greenhouse",
+      token: "acme",
+      status: "pending",
+    });
+    expect(await prisma.communityEmployerCandidate.findFirstOrThrow()).toMatchObject({
+      status: "resolved",
+      detectedPlatform: "greenhouse",
+    });
+  });
+
+  it("keeps unresolved branded pages in the adapter backlog with diagnostics", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://careers.acme.test/openings?gh_jid=12345", "Acme")],
+      "Community A",
+    );
+
+    expect(
+      await resolveBrandedGreenhouseBacklog({
+        limit: null,
+        pauseMs: 0,
+        fetchPage: async () =>
+          `<script src="https://boards-api.greenhouse.io/v1/boards/wrong-token/jobs"></script>`,
+        validateBoard: async () => false,
+      }),
+    ).toEqual({ attempted: 1, resolved: 0 });
+    expect(await prisma.communityEmployerCandidate.findFirstOrThrow()).toMatchObject({
+      status: "needs_adapter",
+      notes: "Branded Greenhouse token was not exposed by the public page HTML",
+    });
+  });
+
+  it("falls back to network discovery for branded Greenhouse pages", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://careers.acme.test/openings?gh_jid=12345", "Acme")],
+      "Community A",
+    );
+    expect(await resolveBrandedGreenhouseBacklog({
+      limit: null,
+      pauseMs: 0,
+      fetchPage: async () => "<html>branded shell</html>",
+      discoverBoard: async () => ({ system: "greenhouse", token: "acme" }),
+      validateBoard: async () => true,
+    })).toEqual({ attempted: 1, resolved: 1 });
+  });
+
+  it("promotes branded hosts exposing the shared Phenom/Jibe API", async () => {
+    await prisma.communityEmployerCandidate.create({
+      data: {
+        companyKey: "shared-api",
+        company: "Example Semiconductor",
+        applicationHost: "careers.example.test",
+        exampleApplyUrl: "https://careers.example.test/jobs/123",
+      },
+    });
+
+    expect(await resolveSharedCareerApiBacklog({
+      limit: null,
+      pauseMs: 0,
+      probe: async (host) => host === "careers.example.test",
+    })).toEqual({ attempted: 1, resolved: 1 });
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      system: "phenom",
+      token: "careers.example.test",
+      status: "pending",
+    });
+    expect(await prisma.communityEmployerCandidate.findFirstOrThrow()).toMatchObject({
+      detectedPlatform: "phenom",
+      status: "resolved",
+    });
   });
 
   it("records one pending candidate and preserves employer aliases", async () => {
@@ -213,6 +337,26 @@ describe("automatic ATS expansion", () => {
       lastError: null,
       nextRetryAt: null,
     });
+  });
+
+  it("pauses a rate-limited learned board before the next validation probe", async () => {
+    await observeCommunityAtsBoards(
+      [posting("https://jobs.ashbyhq.com/acme/abc")],
+      "Community A",
+    );
+    await validatePendingAtsBoards({}, { concurrency: 1, validate: async () => [] });
+    const [company] = await verifiedAtsCompanies();
+    const now = new Date("2026-10-15T12:00:00Z");
+
+    await recordVerifiedAtsPollOutcome(company, new Error("HTTP 429"), now);
+
+    expect(await prisma.discoveredAtsBoard.findFirstOrThrow()).toMatchObject({
+      status: "pending",
+      failureCount: 1,
+      lastError: "HTTP 429",
+      nextRetryAt: new Date("2026-10-15T18:00:00Z"),
+    });
+    expect(await verifiedAtsCompanies()).toEqual([]);
   });
 
   it("turns discovered Workday configuration into a pollable source", async () => {

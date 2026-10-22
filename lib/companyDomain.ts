@@ -3,7 +3,7 @@
 // data (apply URLs point at ATS hosts like greenhouse.io, not the employer), so
 // we derive one from the company name: a curated override for names where a
 // naive guess is wrong, otherwise a slug + ".com". Anything that resolves to a
-// wrong/absent logo simply 404s and the UI falls back to a monogram, so this is
+// wrong/absent logo returns no image and the UI falls back to a monogram, so this is
 // allowed to be approximate.
 
 // Curated, high-signal overrides (keyed by lower-cased company name). Focused on
@@ -236,10 +236,10 @@ export function companyDomain(company: string | null | undefined): string | null
 }
 
 // The primary icon service we proxy. DuckDuckGo returns a real favicon for known
-// domains and an HTTP 404 for unknown ones. We can't rely on that 404 in the
+// domains and an HTTP miss for unknown ones. We can't rely on that response in the
 // browser though: its body is still a decodable placeholder image, so an <img>
 // renders it happily and onError never fires. The /api/logo proxy inspects the
-// real status server-side and returns a true 404, which lets the client fall
+// real status server-side and returns an empty image response, which lets the client fall
 // back to a monogram. When DDG blanks on a valid domain the proxy retries via
 // googleIconUrl() below. (Clearbit is defunct.)
 export function duckDuckGoIconUrl(domain: string): string {
@@ -257,7 +257,7 @@ export function googleIconUrl(domain: string): string {
 }
 
 // The URL the CompanyLogo <img> points at: our own proxy, so a genuinely missing
-// logo produces an onError → monogram instead of DuckDuckGo's placeholder icon.
+// logo produces an empty response and onError → monogram instead of a placeholder.
 export function companyLogoUrl(company: string | null | undefined): string | null {
   if (!companyDomain(company)) return null;
   return `/api/logo?company=${encodeURIComponent(company!.trim())}`;

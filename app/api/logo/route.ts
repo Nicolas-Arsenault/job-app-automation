@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 // Byte lengths of the known "no real icon" placeholders each upstream serves.
 // DuckDuckGo returns a decodable placeholder icon (this exact length) with its
-// 404s, and sometimes an empty 200. Google's favicon service returns a fixed
+// misses, and sometimes an empty 200. Google's favicon service returns a fixed
 // generic-globe PNG (this length at sz=64) for domains it doesn't recognize.
 // Matching on length lets us treat these as "missing" so the card falls back to
 // a monogram instead of rendering a meaningless placeholder.
@@ -18,8 +18,13 @@ const CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800";
 type Icon = { body: ArrayBuffer; contentType: string };
 const cache = new Map<string, Icon | null>();
 
-function notFound(): Response {
-  return new Response(null, { status: 404 });
+function noIcon(): Response {
+  // An empty successful response still fires <img>.onError, which activates the
+  // monogram, without filling the browser console with intentional 404 noise.
+  return new Response(null, {
+    status: 204,
+    headers: { "Cache-Control": CACHE_CONTROL },
+  });
 }
 
 // Fetch one icon source and reject the known placeholder byte lengths. Returns
@@ -44,7 +49,7 @@ async function fetchIcon(url: string, placeholderBytes: number[]): Promise<Icon 
 export async function GET(request: Request): Promise<Response> {
   const company = new URL(request.url).searchParams.get("company");
   const domain = companyDomain(company);
-  if (!domain) return notFound();
+  if (!domain) return noIcon();
 
   if (cache.has(domain)) {
     const hit = cache.get(domain)!;
@@ -52,7 +57,7 @@ export async function GET(request: Request): Promise<Response> {
       ? new Response(hit.body, {
           headers: { "Content-Type": hit.contentType, "Cache-Control": CACHE_CONTROL },
         })
-      : notFound();
+      : noIcon();
   }
 
   // DuckDuckGo first (higher-resolution icons when present), then Google as a
@@ -62,7 +67,7 @@ export async function GET(request: Request): Promise<Response> {
     (await fetchIcon(googleIconUrl(domain), [GOOGLE_GLOBE_BYTES]));
 
   cache.set(domain, icon);
-  if (!icon) return notFound();
+  if (!icon) return noIcon();
   return new Response(icon.body, {
     headers: { "Content-Type": icon.contentType, "Cache-Control": CACHE_CONTROL },
   });

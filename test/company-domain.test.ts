@@ -99,7 +99,7 @@ describe("companyDomain", () => {
 });
 
 describe("companyLogoUrl", () => {
-  it("points at our proxy route so a missing logo can 404 to a monogram", () => {
+  it("points at our proxy route so a missing logo can fall back to a monogram", () => {
     expect(companyLogoUrl("NVIDIA")).toBe("/api/logo?company=NVIDIA");
     expect(companyLogoUrl("Jane Street")).toBe("/api/logo?company=Jane%20Street");
   });

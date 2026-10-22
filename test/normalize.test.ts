@@ -22,8 +22,25 @@ describe("detectAts", () => {
       ),
     ).toBe("oracle");
     expect(detectAts("https://vention.na.teamtailor.com/jobs/123")).toBe("teamtailor");
+    expect(
+      detectAts(
+        "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=abc&jobId=123",
+      ),
+    ).toBe("adp");
     expect(detectAts("https://example.com/careers/1")).toBe("unknown");
     expect(detectAts("not a url")).toBe("unknown");
+  });
+
+  it("identifies Greenhouse jobs hosted on branded careers domains", () => {
+    expect(
+      detectAts("https://careers.example.com/openings?gh_jid=8765770002"),
+    ).toBe("greenhouse");
+    expect(
+      extractExternalId(
+        "greenhouse",
+        "https://careers.example.com/openings?gh_jid=8765770002",
+      ),
+    ).toBe("8765770002");
   });
 });
 

@@ -31,7 +31,10 @@ interface BrowserBacklogTarget {
     | "dover"
     | "gem"
     | "yello"
-    | "jibe";
+    | "jibe"
+    | "dayforce"
+    | "applicantpro"
+    | "hrmdirect";
 }
 
 function targetFor(row: {
@@ -125,6 +128,24 @@ function targetFor(row: {
   } else if (host.endsWith(".jibeapply.com") && parts[0] === "jobs") {
     family = "jibe";
     boardUrl = `${url.origin}/jobs`;
+  } else if (
+    host === "jobs.dayforcehcm.com" &&
+    parts.findIndex((part) => part.toLowerCase() === "candidateportal") >= 2
+  ) {
+    const portalIndex = parts.findIndex(
+      (part) => part.toLowerCase() === "candidateportal",
+    );
+    family = "dayforce";
+    boardUrl = `${url.origin}/${parts.slice(0, portalIndex + 1).join("/")}`;
+  } else if (host.endsWith(".applicantpro.com") && parts[0] === "jobs") {
+    family = "applicantpro";
+    boardUrl = `${url.origin}/jobs/`;
+  } else if (
+    host.endsWith(".hrmdirect.com") &&
+    parts[0]?.toLowerCase() === "employment"
+  ) {
+    family = "hrmdirect";
+    boardUrl = `${url.origin}/employment/job-openings.php?search=true`;
   } else {
     return null;
   }
@@ -173,8 +194,27 @@ function date(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+async function gotoWithTransientRetry(
+  page: Page,
+  url: string,
+  options: { waitUntil: "commit" | "domcontentloaded"; timeout: number },
+) {
+  try {
+    return await page.goto(url, options);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/ERR_NETWORK_IO_SUSPENDED|ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED/i.test(message)) {
+      throw error;
+    }
+    // A laptop wake or network transition can suspend one navigation. Retry
+    // once after a short pause; persistent failures still surface normally.
+    await page.waitForTimeout(2_000);
+    return page.goto(url, options);
+  }
+}
+
 async function boardLinks(page: Page, target: BrowserBacklogTarget) {
-  const response = await page.goto(target.company.searchUrlUS, {
+  const response = await gotoWithTransientRetry(page, target.company.searchUrlUS, {
     // Legacy Taleo pages can keep the DOMContentLoaded lifecycle pending while
     // their search shell is already usable. Waiting for the first response is
     // enough; the bounded pause below still gives the markup time to render.
@@ -212,6 +252,9 @@ async function boardLinks(page: Page, target: BrowserBacklogTarget) {
     gem: /\/[^/]+\/(?:am9|job)/i,
     yello: /\/jobs\//i,
     jibe: /\/jobs\/\d+/i,
+    dayforce: /\/candidateportal\/jobs\/\d+/i,
+    applicantpro: /\/jobs\/\d+/i,
+    hrmdirect: /\/employment\/job-opening\.php\?[^#]*\breq=\d+/i,
   }[target.family];
   const links = new Map<string, string>();
   for (const frame of page.frames()) {
@@ -252,7 +295,7 @@ async function hydrate(
   company: string,
   link: { href: string; title: string; context: string },
 ): Promise<DiscoveryPosting> {
-  const response = await page.goto(link.href, {
+  const response = await gotoWithTransientRetry(page, link.href, {
     waitUntil: "domcontentloaded",
     timeout: 30_000,
   });

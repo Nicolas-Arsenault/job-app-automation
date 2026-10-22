@@ -41,11 +41,13 @@ export type DiscoverySystem =
   | "spotify"
   | "talentbrew"
   | "microsoft"
+  | "ripplematch"
   | "githubboard"
   | "ycombinator"
   | "watchlist"
   | "eightfold"
   | "oracle"
+  | "adp"
   | "workday";
 
 export type BrowserSystem =
@@ -93,6 +95,8 @@ export interface ApiCompany {
   };
   // Eightfold career portal public search API.
   eightfold?: { host: string; domain: string };
+  // Public RippleMatch company roles feed (used by official early-career pages).
+  ripplematch?: { companyId: number; companySlug: string };
   // Oracle Recruiting Candidate Experience public REST API.
   oracle?: { host: string; careerHost: string; site: string };
   // TalentBrew (Radancy) host, e.g. "jobs.intuit.com".
@@ -156,7 +160,14 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Airbnb", method: "api", system: "greenhouse", token: "airbnb", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Roblox", method: "api", system: "greenhouse", token: "roblox", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Discord", method: "api", system: "greenhouse", token: "discord", countryFilter: "post", queryTerms: SWE_BROAD },
-  { name: "HubSpot", method: "api", system: "greenhouse", token: "hubspotjobs", countryFilter: "post", queryTerms: SWE_BROAD },
+  {
+    name: "HubSpot",
+    method: "api",
+    system: "ripplematch",
+    ripplematch: { companyId: 708, companySlug: "hubspot" },
+    countryFilter: "post",
+    queryTerms: SWE_BROAD,
+  },
   { name: "Datadog", method: "api", system: "greenhouse", token: "datadog", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "xAI", method: "api", system: "greenhouse", token: "xai", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "SpaceX", method: "api", system: "greenhouse", token: "spacex", countryFilter: "post", queryTerms: SWE_BROAD },
@@ -349,7 +360,7 @@ export const API_COMPANIES: ApiCompany[] = [
   { name: "Virtu Financial", method: "api", system: "greenhouse", token: "virtu", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Akuna Capital", method: "api", system: "greenhouse", token: "akunacapital", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Five Rings", method: "api", system: "greenhouse", token: "fiveringsllc", countryFilter: "post", queryTerms: SWE_BROAD },
-  { name: "Old Mission Capital", method: "api", system: "greenhouse", token: "oldmissioncapital", countryFilter: "post", queryTerms: SWE_BROAD },
+  { name: "Old Mission Capital", method: "api", system: "ashby", token: "old-mission-capital", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "PDT Partners", method: "api", system: "greenhouse", token: "pdtpartners", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Vatic Labs", method: "api", system: "greenhouse", token: "vaticlabs", countryFilter: "post", queryTerms: SWE_BROAD },
   { name: "Chicago Trading Company", method: "api", system: "greenhouse", token: "chicagotrading", countryFilter: "post", queryTerms: SWE_BROAD },

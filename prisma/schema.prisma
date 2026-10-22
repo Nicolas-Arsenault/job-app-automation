@@ -238,6 +238,10 @@ model DiscoverySource {
   lastCompleteRunAt DateTime?
   lastStatus        String?
   lastMessage       String?
+  // Latest semantic-quality snapshot. Quality warnings are deliberately
+  // separate from transport/completeness status so usable rows stay visible.
+  lastQualityMetrics String?
+  lastQualityWarnings String?
   lastObservedCount Int?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
@@ -258,6 +262,8 @@ model DiscoverySourceRun {
   seeded        Boolean         @default(false)
   observedCount Int             @default(0)
   message       String?
+  qualityMetrics String?
+  qualityWarnings String?
   source        DiscoverySource @relation(fields: [sourceKey], references: [key], onDelete: Cascade)
 
   @@index([sourceKey, startedAt])
